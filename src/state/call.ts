@@ -7,6 +7,7 @@ import {
   updateDoc,
   onSnapshot,
   Unsubscribe,
+  deleteDoc,
 } from "firebase/firestore";
 
 const stunServers = [
@@ -28,6 +29,7 @@ interface Call {
   ongoing: boolean;
   solo: boolean;
   passphrase: string;
+  isCreator: boolean;
   startCall: (passphrase: string) => void;
   isAudio: boolean;
   switchAudio: () => void;
@@ -36,24 +38,32 @@ interface Call {
   userStream: MediaStream | null;
   remoteStream: MediaStream | null;
   peerConnection: RTCPeerConnection | null;
-  endCall: () => void;
+  endCall: () => Promise<void>;
   subscriptions: Unsubscribe[];
+  remoteNetworkStatus: "good" | "poor" | "undefined";
+  checkNetworkQuality: () => void;
 }
 
 export const useCallStore = create<Call>((set, get) => ({
   ongoing: false,
   solo: true,
-  passphrase: "Please wait...",
+  passphrase: "",
   userStream: null,
   remoteStream: null,
   peerConnection: null,
+  isCreator: true,
   startCall: async (passphrase) => {
     const stream = await getUserStream(true, true);
-    set(() => ({ ongoing: true, userStream: stream }));
-
     const peerConnection = new RTCPeerConnection({
       iceServers: [{ urls: stunServers }],
     });
+
+    set(() => ({
+      ongoing: true,
+      userStream: stream,
+      passphrase,
+      peerConnection,
+    }));
 
     // Add local stream tracks to the peer connection
     stream.getTracks().forEach((track) => {
@@ -67,27 +77,48 @@ export const useCallStore = create<Call>((set, get) => ({
       );
     };
 
-    // check if someone is already using this passphrase
+    peerConnection.oniceconnectionstatechange = () => {
+      const state = peerConnection.iceConnectionState;
+      console.log("ICE Connection State:", state);
+
+      if (
+        state === "disconnected" ||
+        state === "failed" ||
+        state === "closed"
+      ) {
+        console.log("Peer disconnected");
+        set(() => ({
+          remoteNetworkStatus: "undefined",
+          solo: true,
+          remoteStream: null,
+        }));
+      }
+    };
+
     const callDocRef = doc(firestore, "calls", passphrase);
     const callDocSnap = await getDoc(callDocRef);
+    // If the passphrase already exists in the database (answering a call)
     if (callDocSnap.exists()) {
+      console.log("room exists, joining it");
+      set(() => ({ isCreator: false }));
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate)
+        if (event.candidate) {
           updateDoc(callDocRef, { answerCandidate: event.candidate?.toJSON() });
+        }
       };
 
       const foundCall = callDocSnap.data() as CallDb;
-      peerConnection.setRemoteDescription(foundCall.offer);
+      await peerConnection.setRemoteDescription(foundCall.offer);
+
       const answer = await peerConnection.createAnswer();
-      await updateDoc(callDocRef, { answer });
       await peerConnection.setLocalDescription(answer);
+      await updateDoc(callDocRef, { answer });
       await peerConnection.addIceCandidate(foundCall.offerCandidate);
 
       const unsub = onSnapshot(callDocRef, {
         next: (doc) => {
           const updatedCall = doc.data() as CallDb;
-          console.log("updated call", updatedCall);
           if (updatedCall?.offerCandidate) {
             peerConnection.addIceCandidate(updatedCall.offerCandidate);
           }
@@ -96,20 +127,23 @@ export const useCallStore = create<Call>((set, get) => ({
 
       set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
     } else {
+      // If the passphrase does not exist (creating a call)
       console.log("call does not exist, creating it");
       await setDoc(callDocRef, {});
+
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate)
+        if (event.candidate) {
           updateDoc(callDocRef, { offerCandidate: event.candidate?.toJSON() });
+        }
       };
 
       // Create an offer to connect to the remote peer
       const offer = await peerConnection.createOffer();
-      await updateDoc(callDocRef, { offer });
       await peerConnection.setLocalDescription(offer);
+      await updateDoc(callDocRef, { offer });
 
-      onSnapshot(callDocRef, {
+      const unsub = onSnapshot(callDocRef, {
         next: (doc) => {
           const updatedCall = doc.data() as CallDb;
           if (!peerConnection.remoteDescription && updatedCall.answer) {
@@ -120,6 +154,7 @@ export const useCallStore = create<Call>((set, get) => ({
           }
         },
       });
+      set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
     }
   },
   isAudio: true,
@@ -140,11 +175,16 @@ export const useCallStore = create<Call>((set, get) => ({
 
     set(() => ({ isCamera: !isCamera }));
   },
-  endCall: () => {
-    const { userStream, peerConnection, subscriptions } = get();
+  endCall: async () => {
+    const { userStream, peerConnection, subscriptions, isCreator, passphrase } =
+      get();
     userStream?.getTracks().forEach((t) => t.stop());
     peerConnection?.close();
     subscriptions.forEach((unsub) => unsub());
+    if (isCreator) {
+      const callRef = doc(firestore, "calls", passphrase);
+      await deleteDoc(callRef);
+    }
 
     set(() => ({
       ongoing: false,
@@ -155,6 +195,34 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   subscriptions: [],
+  remoteNetworkStatus: "undefined",
+  checkNetworkQuality: async () => {
+    const { peerConnection } = get();
+    if (!peerConnection || peerConnection.iceConnectionState !== "connected") {
+      console.log("Cannot check stats: Peer is disconnected");
+      return;
+    }
+    const stats = await peerConnection?.getStats();
+    if (stats) {
+      stats.forEach((report) => {
+        if (report.type === "inbound-rtp") {
+          const packetLossRate =
+            (report.packetsLost / report.packetsReceived) * 100;
+          const jitter = report.jitter;
+          // Assuming more than 5% packet loss or jitter > 0.03 indicates bad network
+          if (packetLossRate > 5 || jitter > 0.03) {
+            console.log("Poor network quality detected");
+            set(() => ({ remoteNetworkStatus: "poor" }));
+          } else {
+            console.log("Network quality is good");
+            set(() => ({ remoteNetworkStatus: "good" }));
+          }
+        }
+      });
+    } else {
+      set(() => ({ remoteNetworkStatus: "undefined" }));
+    }
+  },
 }));
 
 const getUserStream = (audio: boolean, video: boolean) => {
