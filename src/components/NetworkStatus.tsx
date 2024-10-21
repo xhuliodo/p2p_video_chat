@@ -1,5 +1,6 @@
 import { SignalSlashSolid, SignalSolid } from "@graywolfai/react-heroicons";
 import { useCallStore } from "../state/call";
+import { useEffect } from "react";
 
 export const NetworkStatus = () => {
   const checkNetworkQuality = useCallStore(
@@ -9,7 +10,12 @@ export const NetworkStatus = () => {
     (state) => state.remoteNetworkStatus
   );
 
-  setInterval(checkNetworkQuality, 5000);
+  useEffect(() => {
+    const intervalId = setInterval(checkNetworkQuality, 5000);
+    return () => {
+      clearInterval(intervalId);
+    };
+  });
 
   return (
     <div className="fixed right-[5%] top-[5%] rounded-full bg-gray-300">

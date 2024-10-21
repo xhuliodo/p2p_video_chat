@@ -6,22 +6,37 @@ import { useCallStore } from "../state/call";
 export const Home = () => {
   const startCall = useCallStore((state) => state.startCall);
 
+  const [passphrase, setPassphrase] = useState(v7());
+  const [error, setError] = useState("");
+  const regex = /^[a-zA-Z0-9-]+$/;
+  const handlePassphrase = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newPassphrase = event.target.value;
+    setPassphrase(newPassphrase);
+    if (!newPassphrase.length) {
+      setError("The passphrase cannot be empty");
+      return;
+    }
+    if (newPassphrase.length > 50) {
+      setError("The passphrase can be at most 50 characters long");
+      return;
+    }
+    if (!regex.exec(newPassphrase)) {
+      setError("The passphrase can only contain letters, numbers and '-'.");
+      return;
+    }
+
+    setError("");
+  };
+
   const [isCopied, setIsCopied] = useState(false);
   const onClickCopy = () => {
-    const passphrase = document.querySelector(
-      "input[name='passphrase']"
-    ) as HTMLInputElement;
-    navigator.clipboard.writeText(passphrase.value);
-
+    navigator.clipboard.writeText(passphrase);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
 
   const onClickStart = () => {
-    const passphrase = document.querySelector(
-      "input[name='passphrase']"
-    ) as HTMLInputElement;
-    startCall(passphrase.value);
+    startCall(passphrase);
   };
 
   return (
@@ -42,8 +57,9 @@ export const Home = () => {
             <input
               type="text"
               name="passphrase"
-              defaultValue={v7()}
+              value={passphrase}
               className="rounded-sm w-[100%] md:w-[55%] lg:w-[33%]"
+              onChange={handlePassphrase}
             />
             <button
               name="copy"
@@ -53,12 +69,18 @@ export const Home = () => {
               {isCopied ? "Copied!" : <ClipboardOutline className="h-5 w-5" />}
             </button>
           </div>
+          <div>
+            <span className="text-red-600">{error}</span>
+          </div>
         </div>
         <div>
           <button
             name="start"
             onClick={onClickStart}
-            className="p-3 hover:px-4 mt-10 bg-gray-500 rounded-lg active:bg-gray-700 text-2xl"
+            disabled={!!error}
+            className={`p-3  mt-10 bg-gray-500 rounded-lg text-2xl ${
+              !error && "hover:px-4 hover:bg-gray-600 active:bg-gray-700"
+            }`}
           >
             Start
           </button>
