@@ -4,10 +4,10 @@ import { useEffect } from "react";
 
 export const NetworkStatus = () => {
   const checkNetworkQuality = useCallStore(
-    (state) => state.checkNetworkQuality
+    (state) => state.checkNetworkQuality,
   );
   const remoteNetworkStatus = useCallStore(
-    (state) => state.remoteNetworkStatus
+    (state) => state.remoteNetworkStatus,
   );
 
   useEffect(() => {

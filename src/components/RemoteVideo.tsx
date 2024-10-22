@@ -23,12 +23,12 @@ export const RemoteVideo = () => {
   return (
     <>
       {!solo && (
-        <div className="bg-gray-500 h-full w-full">
+        <div className="h-full w-full bg-gray-500">
           <video
             ref={remoteVideoRef}
             autoPlay={true}
             id="caller"
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
           />
           <NetworkStatus />
         </div>

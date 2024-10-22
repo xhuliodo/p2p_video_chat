@@ -29,10 +29,10 @@ export const UserVideo = () => {
   }, [userStream]);
   return (
     <div
-      className={`transition-all duration-500 ease-in-out bg-gray-300 rounded-lg flex flex-col ${
+      className={`flex flex-col rounded-lg bg-gray-300 transition-all duration-500 ease-in-out ${
         solo
           ? "h-screen w-screen gap-1"
-          : "fixed bottom-[5%] left-[5%] h-64 w-52 z-10"
+          : "fixed bottom-[5%] left-[5%] z-10 h-64 w-52"
       }`}
     >
       <video
@@ -45,13 +45,13 @@ export const UserVideo = () => {
       <div className="flex place-content-evenly items-center">
         <button
           onClick={switchAudio}
-          className="w-[50%] flex items-center justify-center"
+          className="flex w-[50%] items-center justify-center"
         >
           <div className="flex items-center gap-1">
             {isAudio ? (
-              <SpeakerWaveSolid className="w-5 h-5" />
+              <SpeakerWaveSolid className="h-5 w-5" />
             ) : (
-              <SpeakerXMarkSolid className="w-5 h-5" />
+              <SpeakerXMarkSolid className="h-5 w-5" />
             )}
             <span className="text-xs">{isAudio ? "Mute" : "Unmute"}</span>
           </div>
@@ -59,13 +59,13 @@ export const UserVideo = () => {
         |
         <button
           onClick={switchCamera}
-          className="w-[50%] flex items-center justify-center"
+          className="flex w-[50%] items-center justify-center"
         >
           <div className="flex items-center gap-1">
             {isCamera ? (
-              <VideoCameraOutline className="w-5 h-5" />
+              <VideoCameraOutline className="h-5 w-5" />
             ) : (
-              <VideoCameraSlashOutline className="w-5 h-5" />
+              <VideoCameraSlashOutline className="h-5 w-5" />
             )}
             <span className="text-xs">
               {isCamera ? "Stop video" : "Share video"}

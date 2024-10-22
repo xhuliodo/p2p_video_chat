@@ -19,10 +19,10 @@ export const ShareCall = () => {
   return (
     <>
       {show && solo && (
-        <div className="z-10 transition-all duration-500 ease-in-out fixed top-2 left-[10%] bg-gray-300 w-[80%] flex justify-between items-center p-2 rounded-md">
+        <div className="fixed left-[10%] top-2 z-10 flex w-[80%] items-center justify-between rounded-md bg-gray-300 p-2 transition-all duration-500 ease-in-out">
           <div className="flex flex-col md:flex-row">
             The passphrase to share is:
-            <b onClick={onClickCopy} className="cursor-pointer ml-1">
+            <b onClick={onClickCopy} className="ml-1 cursor-pointer">
               {isCopied ? (
                 "Copied!"
               ) : (

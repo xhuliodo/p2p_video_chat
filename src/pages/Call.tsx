@@ -17,7 +17,7 @@ export const Call = () => {
       <RemoteVideo />
       <button
         name="Leave"
-        className="fixed right-[5%] bottom-[10%] bg-white active:bg-gray-500 p-3 rounded-lg text-xl"
+        className="fixed bottom-[10%] right-[5%] rounded-lg bg-white p-3 text-xl active:bg-gray-500"
         onClick={onClickLeave}
       >
         Leave
