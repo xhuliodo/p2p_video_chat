@@ -10,6 +10,7 @@ import {
   deleteDoc,
   DocumentSnapshot,
   DocumentReference,
+  arrayUnion,
 } from "firebase/firestore";
 import { v7 } from "uuid";
 import { toast } from "react-toastify";
@@ -52,7 +53,8 @@ interface Call {
   switchCamera: () => void;
   userStream: MediaStream | null;
   remoteStream: MediaStream | null;
-  peerConnection: RTCPeerConnection | null;
+  peerConnection: RTCPeerConnection;
+  remoteIceCandidates: Set<string>;
   endCall: () => Promise<void>;
   subscriptions: Unsubscribe[];
   remoteNetworkStatus: "good" | "poor" | "undefined";
@@ -68,10 +70,15 @@ export const useCallStore = create<Call>((set, get) => ({
   isCreator: true,
   userStream: null,
   remoteStream: null,
-  peerConnection: null,
+  peerConnection: newPeerConnection(),
+  remoteIceCandidates: new Set([]),
   startCall: async (passphrase, toastToShow) => {
+    const { peerConnection, joinCall, createCall, endCall } = get();
     const stream = await getUserStream(true, true);
-    const peerConnection = newPeerConnection(stream);
+    // Add local stream tracks to the peer connection
+    stream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, stream);
+    });
 
     set(() => ({
       ongoing: true,
@@ -87,39 +94,23 @@ export const useCallStore = create<Call>((set, get) => ({
       );
     };
 
+    // Show connection status
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection.iceConnectionState;
-      console.log("ICE Connection State:", state);
-
+      toast(state);
       // TODO: handle reconnections
-      // if (
-      //   state === "disconnected" ||
-      //   state === "failed" ||
-      //   state === "closed"
-      // ) {
-      //   console.log("Peer disconnected");
-      //   set(() => ({
-      //     remoteNetworkStatus: "undefined",
-      //     solo: true,
-      //     remoteStream: null,
-      //   }));
-      //   // get().reconnect(callDocRef);
-      // }
     };
 
-    const { joinCall, createCall } = get();
     const callDocRef = doc(firestore, "calls", passphrase);
-    console.log(callDocRef);
     const callDocSnap = await getDoc(callDocRef);
     // If the passphrase already exists in the database (answering a call)
     if (callDocSnap.exists()) {
       joinCall(callDocRef, callDocSnap, peerConnection);
     } else {
       createCall(callDocRef, peerConnection);
-      toast(toastToShow, { delay: 2000, autoClose: 10000 });
+      toast(toastToShow, { delay: 2000, autoClose: 5000 });
     }
 
-    const { endCall } = get();
     const sub = onSnapshot(callDocRef, {
       next: async (doc) => {
         if (doc.data()?.left) {
@@ -141,17 +132,9 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle ICE candidates
     peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        const call = await getDoc(callDocRef);
-        if (call.exists()) {
-          const callData = call.data() as CallDb;
-          let candidates: RTCIceCandidate[] = [];
-          if (callData.answerCandidates) {
-            candidates = callData.answerCandidates;
-          }
-          updateDoc(callDocRef, {
-            answerCandidates: [...candidates, event.candidate?.toJSON()],
-          });
-        }
+        updateDoc(callDocRef, {
+          answerCandidates: arrayUnion(event.candidate.toJSON()),
+        });
       }
     };
 
@@ -161,19 +144,27 @@ export const useCallStore = create<Call>((set, get) => ({
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     await updateDoc(callDocRef, { answer });
+
     foundCall.offerCandidates?.forEach((c) => {
       peerConnection.addIceCandidate(c);
     });
 
     const unsub = onSnapshot(callDocRef, {
       next: (doc) => {
-        const { peerConnection: currentPeerConnection } = get();
         const updatedCall = doc.data() as CallDb;
-        if (updatedCall?.offerCandidates) {
-          updatedCall.offerCandidates.forEach((c) => {
-            currentPeerConnection?.addIceCandidate(c);
-          });
-        }
+        const { peerConnection: currentPeerConnection, remoteIceCandidates } =
+          get();
+        updatedCall.offerCandidates?.forEach((c) => {
+          if (!remoteIceCandidates.has(c.candidate)) {
+            currentPeerConnection.addIceCandidate(c);
+            set((state) => ({
+              remoteIceCandidates: new Set([
+                ...state.remoteIceCandidates,
+                c.candidate,
+              ]),
+            }));
+          }
+        });
       },
     });
 
@@ -189,17 +180,9 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle ICE candidates
     peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        const call = await getDoc(callDocRef);
-        if (call.exists()) {
-          const callData = call.data() as CallDb;
-          let candidates: RTCIceCandidate[] = [];
-          if (callData.offerCandidates) {
-            candidates = callData.offerCandidates;
-          }
-          updateDoc(callDocRef, {
-            offerCandidates: [...candidates, event.candidate?.toJSON()],
-          });
-        }
+        updateDoc(callDocRef, {
+          offerCandidates: arrayUnion(event.candidate),
+        });
       }
     };
 
@@ -210,15 +193,24 @@ export const useCallStore = create<Call>((set, get) => ({
 
     const unsub = onSnapshot(callDocRef, {
       next: (doc) => {
-        const { peerConnection: currentPeerConnection } = get();
+        const { peerConnection: currentPeerConnection, remoteIceCandidates } =
+          get();
         const updatedCall = doc.data() as CallDb;
-        if (!currentPeerConnection?.remoteDescription && updatedCall.answer) {
-          currentPeerConnection?.setRemoteDescription(updatedCall.answer);
+        if (!currentPeerConnection.remoteDescription && updatedCall.answer) {
+          currentPeerConnection.setRemoteDescription(updatedCall.answer);
         }
         if (updatedCall.answerCandidates) {
-          updatedCall.answerCandidates.forEach((c) =>
-            currentPeerConnection?.addIceCandidate(c),
-          );
+          updatedCall.answerCandidates.forEach((c) => {
+            if (!remoteIceCandidates.has(c.candidate)) {
+              currentPeerConnection.addIceCandidate(c);
+              set((state) => ({
+                remoteIceCandidates: new Set([
+                  ...state.remoteIceCandidates,
+                  c.candidate,
+                ]),
+              }));
+            }
+          });
         }
       },
     });
@@ -322,7 +314,8 @@ export const useCallStore = create<Call>((set, get) => ({
     set(() => ({
       ongoing: false,
       userStream: null,
-      peerConnection: null,
+      peerConnection: newPeerConnection(),
+      remoteIceCandidates: new Set([]),
       passphrase: v7(),
     }));
   },
@@ -407,15 +400,8 @@ const getUserStream = (audio: boolean, video: boolean) => {
   });
 };
 
-const newPeerConnection = (stream: MediaStream): RTCPeerConnection => {
-  const peerConnection = new RTCPeerConnection({
+const newPeerConnection = (): RTCPeerConnection => {
+  return new RTCPeerConnection({
     iceServers: [{ urls: stunServers }],
   });
-
-  // Add local stream tracks to the peer connection
-  stream.getTracks().forEach((track) => {
-    peerConnection.addTrack(track, stream);
-  });
-
-  return peerConnection;
 };
