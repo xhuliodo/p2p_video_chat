@@ -181,7 +181,7 @@ export const useCallStore = create<Call>((set, get) => ({
     peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
         updateDoc(callDocRef, {
-          offerCandidates: arrayUnion(event.candidate),
+          offerCandidates: arrayUnion(event.candidate.toJSON()),
         });
       }
     };
