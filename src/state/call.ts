@@ -17,17 +17,17 @@ import { router } from "../routes";
 
 const stunServers = [
   "stun:stun.l.google.com:19302",
-  // "stun:stun1.l.google.com:19302",
-  // "stun:stun2.l.google.com:19302",
-  // "stun:stun3.l.google.com:19302",
-  // "stun:stun4.l.google.com:19302",
+  "stun:stun1.l.google.com:19302",
+  "stun:stun2.l.google.com:19302",
+  "stun:stun3.l.google.com:19302",
+  "stun:stun4.l.google.com:19302",
 ];
 
 interface CallDb {
   offer: RTCSessionDescriptionInit;
-  offerCandidate: RTCIceCandidate;
+  offerCandidates?: RTCIceCandidate[];
   answer?: RTCSessionDescriptionInit;
-  answerCandidate?: RTCIceCandidate;
+  answerCandidates?: RTCIceCandidate[];
 }
 
 interface Call {
@@ -139,9 +139,19 @@ export const useCallStore = create<Call>((set, get) => ({
     console.log("room exists, joining it");
     set(() => ({ isCreator: false }));
     // Handle ICE candidates
-    peerConnection.onicecandidate = (event) => {
+    peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        updateDoc(callDocRef, { answerCandidate: event.candidate?.toJSON() });
+        const call = await getDoc(callDocRef);
+        if (call.exists()) {
+          const callData = call.data() as CallDb;
+          let candidates: RTCIceCandidate[] = [];
+          if (callData.answerCandidates) {
+            candidates = callData.answerCandidates;
+          }
+          updateDoc(callDocRef, {
+            answerCandidates: [...candidates, event.candidate?.toJSON()],
+          });
+        }
       }
     };
 
@@ -151,14 +161,18 @@ export const useCallStore = create<Call>((set, get) => ({
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     await updateDoc(callDocRef, { answer });
-    await peerConnection.addIceCandidate(foundCall.offerCandidate);
+    foundCall.offerCandidates?.forEach((c) => {
+      peerConnection.addIceCandidate(c);
+    });
 
     const unsub = onSnapshot(callDocRef, {
       next: (doc) => {
         const { peerConnection: currentPeerConnection } = get();
         const updatedCall = doc.data() as CallDb;
-        if (updatedCall?.offerCandidate) {
-          currentPeerConnection?.addIceCandidate(updatedCall.offerCandidate);
+        if (updatedCall?.offerCandidates) {
+          updatedCall.offerCandidates.forEach((c) => {
+            currentPeerConnection?.addIceCandidate(c);
+          });
         }
       },
     });
@@ -173,9 +187,19 @@ export const useCallStore = create<Call>((set, get) => ({
     console.log("call does not exist, creating it");
 
     // Handle ICE candidates
-    peerConnection.onicecandidate = (event) => {
+    peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        updateDoc(callDocRef, { offerCandidate: event.candidate?.toJSON() });
+        const call = await getDoc(callDocRef);
+        if (call.exists()) {
+          const callData = call.data() as CallDb;
+          let candidates: RTCIceCandidate[] = [];
+          if (callData.offerCandidates) {
+            candidates = callData.offerCandidates;
+          }
+          updateDoc(callDocRef, {
+            offerCandidates: [...candidates, event.candidate?.toJSON()],
+          });
+        }
       }
     };
 
@@ -191,8 +215,10 @@ export const useCallStore = create<Call>((set, get) => ({
         if (!currentPeerConnection?.remoteDescription && updatedCall.answer) {
           currentPeerConnection?.setRemoteDescription(updatedCall.answer);
         }
-        if (updatedCall.answerCandidate) {
-          currentPeerConnection?.addIceCandidate(updatedCall.answerCandidate);
+        if (updatedCall.answerCandidates) {
+          updatedCall.answerCandidates.forEach((c) =>
+            currentPeerConnection?.addIceCandidate(c),
+          );
         }
       },
     });
