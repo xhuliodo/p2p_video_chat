@@ -400,8 +400,8 @@ const getUserStream = (audio: boolean, video: boolean) => {
   });
 };
 
-const newPeerConnection = (): RTCPeerConnection => {
+function newPeerConnection(): RTCPeerConnection {
   return new RTCPeerConnection({
     iceServers: [{ urls: stunServers }],
   });
-};
+}
