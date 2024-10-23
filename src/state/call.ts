@@ -92,19 +92,19 @@ export const useCallStore = create<Call>((set, get) => ({
       console.log("ICE Connection State:", state);
 
       // TODO: handle reconnections
-      if (
-        state === "disconnected" ||
-        state === "failed" ||
-        state === "closed"
-      ) {
-        console.log("Peer disconnected");
-        set(() => ({
-          remoteNetworkStatus: "undefined",
-          solo: true,
-          remoteStream: null,
-        }));
-        // get().reconnect(callDocRef);
-      }
+      // if (
+      //   state === "disconnected" ||
+      //   state === "failed" ||
+      //   state === "closed"
+      // ) {
+      //   console.log("Peer disconnected");
+      //   set(() => ({
+      //     remoteNetworkStatus: "undefined",
+      //     solo: true,
+      //     remoteStream: null,
+      //   }));
+      //   // get().reconnect(callDocRef);
+      // }
     };
 
     const { joinCall, createCall } = get();
