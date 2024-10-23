@@ -46,7 +46,6 @@ interface Call {
     callDocRef: DocumentReference,
     peerConnection: RTCPeerConnection,
   ) => void;
-  // reconnect: (callDocRef: DocumentReference) => void;
   isAudio: boolean;
   switchAudio: () => void;
   isCamera: boolean;
@@ -95,10 +94,16 @@ export const useCallStore = create<Call>((set, get) => ({
     };
 
     // Show connection status
-    peerConnection.oniceconnectionstatechange = () => {
+    peerConnection.oniceconnectionstatechange = async () => {
       const state = peerConnection.iceConnectionState;
       toast(state);
-      // TODO: handle reconnections
+      if (state === "closed" || state === "failed") {
+        await endCall();
+        deleteDoc(callDocRef);
+        router.navigate("/", {
+          state: { message: "Could not connect." },
+        });
+      }
     };
 
     const callDocRef = doc(firestore, "calls", passphrase);
@@ -116,7 +121,9 @@ export const useCallStore = create<Call>((set, get) => ({
         if (doc.data()?.left) {
           await endCall();
           deleteDoc(callDocRef);
-          router.navigate("/", { state: { leftTheCall: true } });
+          router.navigate("/", {
+            state: { message: "Your buddy left the call." },
+          });
         }
       },
     });
@@ -216,75 +223,6 @@ export const useCallStore = create<Call>((set, get) => ({
     });
     set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
   },
-  // reconnect: async (callDocRef: DocumentReference) => {
-  //   const {
-  //     isCreator,
-  //     userStream,
-  //     isAudio,
-  //     isCamera,
-  //     peerConnection: olderPeerConnection,
-  //   } = get();
-  //   // close older peerconnection and also older subscriptions
-  //   olderPeerConnection?.close();
-  //   let peerConnection: RTCPeerConnection;
-  //   if (userStream) {
-  //     peerConnection = newPeerConnection(userStream);
-  //   } else {
-  //     const newUserStream = await getUserStream(isAudio, isCamera);
-  //     peerConnection = newPeerConnection(newUserStream);
-  //   }
-  //   set(() => ({ peerConnection }));
-
-  //   peerConnection.oniceconnectionstatechange = () => {
-  //     const state = peerConnection.iceConnectionState;
-  //     console.log("ICE Connection State:", state);
-
-  //     // TODO: handle reconnections
-  //     if (
-  //       state === "disconnected" ||
-  //       state === "failed" ||
-  //       state === "closed"
-  //     ) {
-  //       console.log("Peer disconnected");
-  //       set(() => ({
-  //         remoteNetworkStatus: "undefined",
-  //         solo: true,
-  //         remoteStream: null,
-  //       }));
-  //       get().reconnect(callDocRef);
-  //     }
-  //   };
-
-  //   if (isCreator) {
-  //     // Handle ICE candidates
-  //     peerConnection.onicecandidate = (event) => {
-  //       if (event.candidate) {
-  //         updateDoc(callDocRef, { offerCandidate: event.candidate?.toJSON() });
-  //       }
-  //     };
-
-  //     // Create an offer to connect to the remote peer
-  //     const offer = await peerConnection.createOffer();
-  //     await peerConnection.setLocalDescription(offer);
-  //     await setDoc(callDocRef, { offer });
-  //   } else {
-  //     // Handle ICE candidates
-  //     peerConnection.onicecandidate = (event) => {
-  //       if (event.candidate) {
-  //         updateDoc(callDocRef, { answerCandidate: event.candidate?.toJSON() });
-  //       }
-  //     };
-
-  //     const callDocSnap = await getDoc(callDocRef);
-  //     const foundCall = callDocSnap.data() as CallDb;
-  //     await peerConnection.setRemoteDescription(foundCall.offer);
-
-  //     const answer = await peerConnection.createAnswer();
-  //     await peerConnection.setLocalDescription(answer);
-  //     await updateDoc(callDocRef, { answer });
-  //     await peerConnection.addIceCandidate(foundCall.offerCandidate);
-  //   }
-  // },
   isAudio: true,
   switchAudio: async () => {
     const { userStream, isAudio } = get();

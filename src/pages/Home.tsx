@@ -8,13 +8,13 @@ export const Home = () => {
   const location = useLocation();
   const navigate = useNavigate();
   useEffect(() => {
-    if (location.state?.leftTheCall) {
-      toast("Your buddy left the call.");
+    if (location.state?.message) {
+      toast(location.state?.message);
 
       // Use 'replace' to update the state without causing a navigation event
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.state?.leftTheCall, location.pathname, navigate]);
+  }, [location.state?.message, location.pathname, navigate]);
   const [passphrase, setPassphrase] = useState(v7());
   const [error, setError] = useState("");
   const regex = /^[a-zA-Z0-9-]+$/;
@@ -99,6 +99,7 @@ export const Home = () => {
         position="top-center"
         style={{ width: "80%" }}
         progressStyle={{ background: "gray" }}
+        limit={3}
       />
     </div>
   );

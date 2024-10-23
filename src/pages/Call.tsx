@@ -14,7 +14,7 @@ export const Call = () => {
   const { passphrase } = useParams();
   useEffect(() => {
     if (passphrase) {
-      startCall(passphrase, <ShareCall passphrase={passphrase} />);
+      startCall(passphrase, <ShareCall />);
     }
     return () => {
       endCall();
