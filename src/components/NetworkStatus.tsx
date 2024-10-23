@@ -11,7 +11,7 @@ export const NetworkStatus = () => {
   );
 
   useEffect(() => {
-    const intervalId = setInterval(checkNetworkQuality, 5000);
+    const intervalId = setInterval(checkNetworkQuality, 2000);
     return () => {
       clearInterval(intervalId);
     };

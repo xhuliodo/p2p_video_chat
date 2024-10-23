@@ -20,9 +20,14 @@ export const UserVideo = () => {
     const userVideo = userVideoRef.current;
     if (userVideo) {
       userVideo.srcObject = userStream;
+      if (userStream) {
+        userVideo.play();
+      }
     }
+
     return () => {
       if (userVideo) {
+        userStream?.getTracks().forEach((t) => t.stop());
         userVideo.srcObject = null; // Clean up media stream
       }
     };
@@ -31,16 +36,16 @@ export const UserVideo = () => {
     <div
       className={`flex flex-col rounded-lg bg-gray-300 transition-all duration-500 ease-in-out ${
         solo
-          ? "h-screen w-screen gap-1"
+          ? "h-dvh w-full gap-1"
           : "fixed bottom-[5%] left-[5%] z-10 h-64 w-52"
       }`}
     >
       <video
         id="user"
-        muted={true}
-        autoPlay={true}
+        muted
+        playsInline
         ref={userVideoRef}
-        className="h-[96%] object-cover"
+        className={`h-[95%] object-cover ${!solo && "h-[90%]"}`}
       ></video>
       <div className="flex place-content-evenly items-center">
         <button

@@ -1,11 +1,20 @@
 import { ClipboardOutline } from "@graywolfai/react-heroicons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { v7 } from "uuid";
-import { useCallStore } from "../state/call";
+import { useLocation, useNavigate } from "react-router-dom";
+import { toast, ToastContainer } from "react-toastify";
 
 export const Home = () => {
-  const startCall = useCallStore((state) => state.startCall);
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (location.state?.leftTheCall) {
+      toast("Your buddy left the call.");
 
+      // Use 'replace' to update the state without causing a navigation event
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state?.leftTheCall, location.pathname, navigate]);
   const [passphrase, setPassphrase] = useState(v7());
   const [error, setError] = useState("");
   const regex = /^[a-zA-Z0-9-]+$/;
@@ -36,11 +45,11 @@ export const Home = () => {
   };
 
   const onClickStart = () => {
-    startCall(passphrase);
+    navigate(`/calls/${passphrase}`);
   };
 
   return (
-    <div className="h-screen w-screen">
+    <div className="h-dvh w-screen">
       <div className="flex h-full flex-col items-center justify-center gap-2 rounded-md bg-gray-300">
         <div className="mb-20 flex w-[80%] flex-col items-center justify-center">
           <span className="text-3xl">
@@ -86,6 +95,11 @@ export const Home = () => {
           </button>
         </div>
       </div>
+      <ToastContainer
+        position="top-center"
+        style={{ width: "80%" }}
+        progressStyle={{ background: "gray" }}
+      />
     </div>
   );
 };

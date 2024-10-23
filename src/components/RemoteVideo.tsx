@@ -11,11 +11,14 @@ export const RemoteVideo = () => {
   useEffect(() => {
     const remoteVideo = remoteVideoRef.current;
     if (remoteVideo) {
-      console.log("Assigning remote stream to video element", remoteStream);
       remoteVideo.srcObject = remoteStream;
+      if (remoteStream) {
+        remoteVideo.play();
+      }
     }
     return () => {
       if (remoteVideo) {
+        remoteStream?.getTracks().forEach((t) => t.stop());
         remoteVideo.srcObject = null; // Clean up media stream
       }
     };
@@ -26,9 +29,9 @@ export const RemoteVideo = () => {
         <div className="h-full w-full bg-gray-500">
           <video
             ref={remoteVideoRef}
-            autoPlay={true}
+            playsInline
             id="caller"
-            className="h-full w-full object-cover"
+            className="object-fit h-full w-full"
           />
           <NetworkStatus />
         </div>
