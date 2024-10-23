@@ -45,7 +45,7 @@ export const UserVideo = () => {
         muted
         playsInline
         ref={userVideoRef}
-        className={`h-[95%] object-cover ${!solo && "h-[90%]"}`}
+        className={`object-cover transition-all duration-500 ease-in-out ${solo ? "h-[90%]" : "h-[95%]"}`}
       ></video>
       <div className="flex place-content-evenly items-center">
         <button
