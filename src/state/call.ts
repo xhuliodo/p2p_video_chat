@@ -16,14 +16,6 @@ import { v7 } from "uuid";
 import { toast } from "react-toastify";
 import { router } from "../routes";
 
-// Calling the REST API TO fetch the TURN Server Credentials
-const response = await fetch(
-  "https://xd-p2p-video-chat.metered.live/api/v1/turn/credentials?apiKey=cd45057e409fef9a935947fcbb9a58fd736b",
-);
-
-// Saving the response in the iceServers array
-const iceServers = await response.json();
-
 interface CallDb {
   offer: RTCSessionDescriptionInit;
   offerCandidates?: RTCIceCandidate[];
@@ -69,11 +61,10 @@ export const useCallStore = create<Call>((set, get) => ({
   isCreator: false,
   userStream: null,
   remoteStream: null,
-  peerConnection: newPeerConnection(),
+  peerConnection: new RTCPeerConnection(),
   remoteIceCandidates: new Set([]),
   startCall: async (passphrase) => {
-    const { isAudio, isCamera, peerConnection, joinCall, createCall, endCall } =
-      get();
+    const { isAudio, isCamera, joinCall, createCall, endCall } = get();
     let stream;
     try {
       stream = await getUserStream(isAudio, isCamera);
@@ -83,6 +74,8 @@ export const useCallStore = create<Call>((set, get) => ({
       });
       return;
     }
+
+    const peerConnection = await newPeerConnection();
     // Add local stream tracks to the peer connection
     stream.getTracks().forEach((track) => {
       peerConnection.addTrack(track, stream);
@@ -260,7 +253,7 @@ export const useCallStore = create<Call>((set, get) => ({
     set(() => ({
       ongoing: false,
       userStream: null,
-      peerConnection: newPeerConnection(),
+      peerConnection: new RTCPeerConnection(),
       remoteIceCandidates: new Set([]),
       passphrase: v7(),
     }));
@@ -346,7 +339,15 @@ const getUserStream = (audio: boolean, video: boolean) => {
   });
 };
 
-function newPeerConnection(): RTCPeerConnection {
+async function newPeerConnection(): Promise<RTCPeerConnection> {
+  // Calling the REST API TO fetch the TURN Server Credentials
+  const response = await fetch(
+    "https://xd-p2p-video-chat.metered.live/api/v1/turn/credentials?apiKey=cd45057e409fef9a935947fcbb9a58fd736b",
+  );
+
+  // Saving the response in the iceServers array
+  const iceServers = await response.json();
+
   return new RTCPeerConnection({
     iceServers,
   });
