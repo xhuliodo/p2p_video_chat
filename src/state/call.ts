@@ -72,8 +72,17 @@ export const useCallStore = create<Call>((set, get) => ({
   peerConnection: newPeerConnection(),
   remoteIceCandidates: new Set([]),
   startCall: async (passphrase, toastToShow) => {
-    const { peerConnection, joinCall, createCall, endCall } = get();
-    const stream = await getUserStream(true, true);
+    const { isAudio, isCamera, peerConnection, joinCall, createCall, endCall } =
+      get();
+    let stream;
+    try {
+      stream = await getUserStream(isAudio, isCamera);
+    } catch {
+      router.navigate("/", {
+        state: { message: "Permissions of camera and audio are required!" },
+      });
+      return;
+    }
     // Add local stream tracks to the peer connection
     stream.getTracks().forEach((track) => {
       peerConnection.addTrack(track, stream);
