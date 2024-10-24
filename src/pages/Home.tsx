@@ -45,6 +45,7 @@ export const Home = () => {
   return (
     <div className="h-dvh w-screen">
       <div className="flex h-full flex-col items-center justify-center bg-[#008B8B]">
+        <img src="logo.svg" />
         <div className="mb-20 flex w-[80%] flex-col items-center justify-center">
           <span className="text-center text-6xl text-white">
             Video chat{" "}
