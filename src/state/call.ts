@@ -16,13 +16,13 @@ import { v7 } from "uuid";
 import { toast } from "react-toastify";
 import { router } from "../routes";
 
-const stunServers = [
-  "stun:stun.l.google.com:19302",
-  "stun:stun1.l.google.com:19302",
-  "stun:stun2.l.google.com:19302",
-  "stun:stun3.l.google.com:19302",
-  "stun:stun4.l.google.com:19302",
-];
+// Calling the REST API TO fetch the TURN Server Credentials
+const response = await fetch(
+  "https://xd-p2p-video-chat.metered.live/api/v1/turn/credentials?apiKey=cd45057e409fef9a935947fcbb9a58fd736b",
+);
+
+// Saving the response in the iceServers array
+const iceServers = await response.json();
 
 interface CallDb {
   offer: RTCSessionDescriptionInit;
@@ -348,6 +348,6 @@ const getUserStream = (audio: boolean, video: boolean) => {
 
 function newPeerConnection(): RTCPeerConnection {
   return new RTCPeerConnection({
-    iceServers: [{ urls: stunServers }],
+    iceServers,
   });
 }
