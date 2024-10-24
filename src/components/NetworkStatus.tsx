@@ -18,10 +18,10 @@ export const NetworkStatus = () => {
   });
 
   return (
-    <div className="fixed right-[5%] top-[5%] rounded-full bg-gray-300">
-      {remoteNetworkStatus === "good" && <SignalSolid className="h-10 w-10" />}
+    <div className="fixed right-[5%] top-[5%] text-white">
+      {remoteNetworkStatus === "good" && <SignalSolid className="h-7 w-7" />}
       {remoteNetworkStatus === "poor" && (
-        <SignalSlashSolid className="h-10 w-10" />
+        <SignalSlashSolid className="h-7 w-7" />
       )}
     </div>
   );

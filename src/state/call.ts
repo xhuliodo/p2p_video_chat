@@ -36,7 +36,7 @@ interface Call {
   solo: boolean;
   passphrase: string;
   isCreator: boolean;
-  startCall: (passphrase: string, toastToShow: JSX.Element) => void;
+  startCall: (passphrase: string) => Promise<void>;
   joinCall: (
     callDocRef: DocumentReference,
     callDocSnap: DocumentSnapshot,
@@ -66,12 +66,12 @@ export const useCallStore = create<Call>((set, get) => ({
   ongoing: false,
   solo: true,
   passphrase: "",
-  isCreator: true,
+  isCreator: false,
   userStream: null,
   remoteStream: null,
   peerConnection: newPeerConnection(),
   remoteIceCandidates: new Set([]),
-  startCall: async (passphrase, toastToShow) => {
+  startCall: async (passphrase) => {
     const { isAudio, isCamera, peerConnection, joinCall, createCall, endCall } =
       get();
     let stream;
@@ -122,7 +122,6 @@ export const useCallStore = create<Call>((set, get) => ({
       joinCall(callDocRef, callDocSnap, peerConnection);
     } else {
       createCall(callDocRef, peerConnection);
-      toast(toastToShow, { delay: 2000, autoClose: 5000 });
     }
 
     const sub = onSnapshot(callDocRef, {
@@ -144,7 +143,6 @@ export const useCallStore = create<Call>((set, get) => ({
     peerConnection: RTCPeerConnection,
   ) => {
     console.log("room exists, joining it");
-    set(() => ({ isCreator: false }));
     // Handle ICE candidates
     peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
@@ -192,6 +190,7 @@ export const useCallStore = create<Call>((set, get) => ({
   ) => {
     // If the passphrase does not exist (creating a call)
     console.log("call does not exist, creating it");
+    set(() => ({ isCreator: true }));
 
     // Handle ICE candidates
     peerConnection.onicecandidate = async (event) => {

@@ -26,7 +26,7 @@ export const RemoteVideo = () => {
   return (
     <>
       {!solo && (
-        <div className="h-full w-full bg-gray-500">
+        <div className="h-full w-full bg-gray-400">
           <video
             ref={remoteVideoRef}
             playsInline
