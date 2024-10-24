@@ -23,7 +23,11 @@ export const Call = () => {
 
   const onClickLeave = async () => {
     console.log("leaving call");
-    await endCall(); // Wait for endCall to complete
+    try {
+      await endCall(); // Wait for endCall to complete
+    } catch (e) {
+      console.log("while leaving call caught error:", e);
+    }
     navigate("/"); // Only navigate after endCall finishes
   };
 

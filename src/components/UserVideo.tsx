@@ -37,7 +37,7 @@ export const UserVideo = () => {
       className={`flex flex-col rounded-lg bg-gray-300 transition-all duration-500 ease-in-out ${
         solo
           ? "h-dvh w-full gap-1"
-          : "fixed bottom-[5%] left-[5%] z-10 h-64 w-52"
+          : "fixed bottom-[5%] left-[5%] z-10 h-44 w-32 md:h-64 md:w-52"
       }`}
     >
       <video
@@ -45,20 +45,22 @@ export const UserVideo = () => {
         muted
         playsInline
         ref={userVideoRef}
-        className={`scale-x-[-1] object-cover transition-all duration-500 ease-in-out ${solo ? "h-[95%]" : "h-[90%]"}`}
+        className={`scale-x-[-1] object-cover transition-all duration-500 ease-in-out ${solo ? "h-[95%]" : "h-[80%] md:h-[90%]"}`}
       ></video>
       <div className="flex place-content-evenly items-center">
         <button
           onClick={switchAudio}
           className="flex w-[50%] items-center justify-center"
         >
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-[2px] md:gap-1">
             {isAudio ? (
               <SpeakerWaveSolid className="h-5 w-5" />
             ) : (
               <SpeakerXMarkSolid className="h-5 w-5" />
             )}
-            <span className="text-xs">{isAudio ? "Mute" : "Unmute"}</span>
+            <span className="text-[8px] md:text-xs">
+              {isAudio ? "Mute" : "Unmute"}
+            </span>
           </div>
         </button>
         |
@@ -66,13 +68,13 @@ export const UserVideo = () => {
           onClick={switchCamera}
           className="flex w-[50%] items-center justify-center"
         >
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-[2px] md:gap-1">
             {isCamera ? (
               <VideoCameraOutline className="h-5 w-5" />
             ) : (
               <VideoCameraSlashOutline className="h-5 w-5" />
             )}
-            <span className="text-xs">
+            <span className="text-[8px] md:text-xs">
               {isCamera ? "Stop video" : "Share video"}
             </span>
           </div>
