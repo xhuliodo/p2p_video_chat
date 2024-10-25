@@ -6,6 +6,7 @@ import {
   VideoCameraOutline,
   VideoCameraSlashOutline,
 } from "@graywolfai/react-heroicons";
+import { LoadingSpinner } from "./LoadingSpinner";
 
 export const UserVideo = () => {
   const solo = useCallStore((state) => state.solo);
@@ -40,13 +41,23 @@ export const UserVideo = () => {
           : "fixed bottom-[5%] left-[5%] z-10 h-44 w-32 md:h-64 md:w-52"
       }`}
     >
-      <video
-        id="user"
-        muted
-        playsInline
-        ref={userVideoRef}
-        className={`scale-x-[-1] object-cover transition-all duration-500 ease-in-out ${solo ? "h-[95%]" : "h-[85%] md:h-[90%]"}`}
-      ></video>
+      <div
+        className={`flex items-center justify-center transition-all duration-500 ease-in-out ${solo ? "h-[95%]" : "h-[85%] md:h-[90%]"}`}
+      >
+        {!userStream && (
+          <LoadingSpinner className="h-10 w-10 md:h-20 md:w-20" />
+        )}
+        {!!userStream && (
+          <video
+            id="user"
+            muted
+            playsInline
+            ref={userVideoRef}
+            className={`h-full w-full scale-x-[-1] object-cover`}
+          ></video>
+        )}
+      </div>
+
       <div className="flex place-content-evenly items-center">
         <button
           onClick={switchAudio}
@@ -63,7 +74,7 @@ export const UserVideo = () => {
         <span className="text-white">|</span>
         <button
           onClick={switchCamera}
-          className="flex w-[50%] text-white items-center justify-center"
+          className="flex w-[50%] items-center justify-center text-white"
         >
           <div className="flex items-center gap-[2px] md:gap-1">
             {isCamera ? (

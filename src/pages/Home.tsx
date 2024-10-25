@@ -44,10 +44,10 @@ export const Home = () => {
 
   return (
     <div className="h-dvh w-screen">
-      <div className="flex h-full flex-col items-center justify-center bg-[#008B8B]">
-        <img src="logo.svg" />
-        <div className="mb-20 flex w-[80%] flex-col items-center justify-center">
-          <span className="text-center text-6xl text-white">
+      <div className="flex h-full flex-col items-center justify-center bg-[#008B8B] gap-5">
+        <img className="-mb-7" src="logo.svg" />
+        <div className="flex w-[80%] flex-col items-center justify-center">
+          <span className="text-center text-5xl text-white md:text-7xl">
             Video chat{" "}
             <b className="drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.5)]">
               securily
@@ -55,8 +55,8 @@ export const Home = () => {
             directly on your browser
           </span>
         </div>
-        <div className="flex w-full flex-col items-center justify-center gap-5">
-          <div className="flex w-[80%] justify-center gap-2">
+        <div className="flex w-full flex-col items-center justify-center">
+          <div className="flex w-[80%] flex-col items-center justify-center gap-5">
             <input
               type="text"
               name="passphrase"
@@ -64,11 +64,7 @@ export const Home = () => {
               className="h-12 w-full max-w-sm text-center text-lg placeholder:text-sm"
               onChange={handlePassphrase}
             />
-          </div>
-          <div>
-            <span className="text-red-600">{error}</span>
-          </div>
-          <div className="flex w-[80%] justify-center">
+            <p className="text-red-900">{error}</p>
             <button
               name="start"
               onClick={onClickStart}
