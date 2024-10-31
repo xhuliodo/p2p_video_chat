@@ -19,6 +19,7 @@ const UserVideo: React.FC = () => {
   const switchAudio = useCallStore((state) => state.switchAudio);
   const isCameraEnabled = useCallStore((state) => state.isCameraEnabled);
   const switchCamera = useCallStore((state) => state.switchCamera);
+  const shouldFlip = useCallStore((state) => state.shouldFlip);
 
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
@@ -57,7 +58,7 @@ const UserVideo: React.FC = () => {
             muted
             playsInline
             ref={userVideoRef}
-            className={`h-full w-full scale-x-[-1] object-cover`}
+            className={`h-full w-full ${shouldFlip && "scale-x-[-1]"} object-cover`}
           ></video>
         )}
       </div>

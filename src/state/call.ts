@@ -43,6 +43,7 @@ interface Call {
   isCameraEnabled: boolean;
   cameraPerspective: "environment" | "user";
   switchCamera: () => void;
+  shouldFlip: boolean;
   canSwitchCameraPerspective: boolean;
   switchCameraPerspective: () => Promise<void>;
   userStream: MediaStream | null;
@@ -257,6 +258,7 @@ export const useCallStore = create<Call>((set, get) => ({
 
     set(() => ({ isCameraEnabled: !isCameraEnabled }));
   },
+  shouldFlip: true,
   canSwitchCameraPerspective: true,
   switchCameraPerspective: async () => {
     const {
@@ -277,7 +279,6 @@ export const useCallStore = create<Call>((set, get) => ({
       true,
       newCameraPerspective,
     );
-    set(() => ({ isCameraEnabled: true }));
 
     // check if the user can switch for future uses
     if (cameraPerspective === "user") {
@@ -308,7 +309,10 @@ export const useCallStore = create<Call>((set, get) => ({
     sender?.replaceTrack(newVideoTrack);
 
     // modify the perspective
-    set(() => ({ cameraPerspective: newCameraPerspective }));
+    set(() => ({
+      cameraPerspective: newCameraPerspective,
+      shouldFlip: newCameraPerspective === "user",
+    }));
   },
   endCall: async () => {
     const { peerConnection, subscriptions, passphrase } = get();
