@@ -96,11 +96,14 @@ export const DraggableAndResizableUserVideo = () => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
-  const windowDimensions = useWindowDimensions()
+  const windowDimensions = useWindowDimensions();
 
   const deltaHeight = useRef(0);
   const [isResizing, setIsResizing] = useState(false);
-  const [size, setSize] = useState({ width: windowDimensions.width, height: windowDimensions.height });
+  const [size, setSize] = useState({
+    width: windowDimensions.width,
+    height: windowDimensions.height,
+  });
 
   useEffect(() => {
     if (!solo) {
@@ -111,7 +114,10 @@ export const DraggableAndResizableUserVideo = () => {
       setSize({ width: 128, height: 192 });
     } else {
       setPosition({ x: 0, y: 0 });
-      setSize({ width: windowDimensions.width, height: windowDimensions.height });
+      setSize({
+        width: windowDimensions.width,
+        height: windowDimensions.height,
+      });
     }
   }, [solo, windowDimensions.height, windowDimensions.width]);
   const handleOnDragStart: DraggableEventHandler = () => {
@@ -165,7 +171,7 @@ export const DraggableAndResizableUserVideo = () => {
     >
       <div
         ref={nodeRef}
-        className={`absolute h-fit w-fit rounded-md bg-[#008B8B] transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
+        className={`${!solo && "absolute z-10"} h-fit w-fit rounded-md bg-[#008B8B] transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
       >
         <Resizable
           bounds="window"
@@ -173,8 +179,12 @@ export const DraggableAndResizableUserVideo = () => {
           lockAspectRatio
           minHeight={192}
           minWidth={128}
-          maxHeight={solo ? windowDimensions.height : windowDimensions.height * 0.5}
-          maxWidth={solo ? windowDimensions.width : windowDimensions.width * 0.5}
+          maxHeight={
+            solo ? windowDimensions.height : windowDimensions.height * 0.5
+          }
+          maxWidth={
+            solo ? windowDimensions.width : windowDimensions.width * 0.5
+          }
           onResizeStart={onResizeStart}
           onResize={onResize}
           onResizeStop={onResizeStop}
@@ -188,13 +198,13 @@ export const DraggableAndResizableUserVideo = () => {
             topLeft: false,
             right: false,
             top: false,
-            topRight: !isDragging && !solo,
+            topRight: true,
           }}
           handleComponent={{
             topRight: <Handle className="rotate-90" />,
           }}
           handleClasses={{
-            topRight: "z-10 rounded-full bg-gray-100 active:bg-gray-300",
+            topRight: `z-10 rounded-full bg-gray-100 active:bg-gray-300 ${solo && "hidden"}`,
           }}
         >
           <UserVideo />
