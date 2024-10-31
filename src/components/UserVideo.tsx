@@ -58,7 +58,7 @@ const UserVideo: React.FC = () => {
         )}
       </div>
 
-      <div className="flex place-content-evenly items-center">
+      <div className="z-20 flex place-content-evenly items-center">
         <button
           onClick={switchAudio}
           className="flex w-[50%] items-center justify-center"
