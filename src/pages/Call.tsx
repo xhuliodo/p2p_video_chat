@@ -1,5 +1,5 @@
 import { RemoteVideo } from "../components/RemoteVideo";
-import { UserVideo } from "../components/UserVideo";
+import { DraggableAndResizableUserVideo } from "../components/UserVideo";
 import { useCallStore } from "../state/call";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect } from "react";
@@ -64,8 +64,8 @@ export const Call = () => {
   });
 
   return (
-    <div className="h-dvh w-screen bg-[#008B8B]">
-      <UserVideo />
+    <div className="callScreen h-dvh w-screen">
+      <DraggableAndResizableUserVideo />
       <RemoteVideo />
       <div
         className={`fixed bottom-[10%] right-[5%] ${!solo && "bottom-[5%]"} h-[20%]`}
