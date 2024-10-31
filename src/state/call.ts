@@ -38,10 +38,13 @@ interface Call {
     callDocRef: DocumentReference,
     peerConnection: RTCPeerConnection,
   ) => void;
-  isAudio: boolean;
+  isAudioEnabled: boolean;
   switchAudio: () => void;
-  isCamera: boolean;
+  isCameraEnabled: boolean;
+  cameraPerspective: "environment" | "user";
   switchCamera: () => void;
+  canSwitchCameraPerspective: boolean;
+  switchCameraPerspective: () => void;
   userStream: MediaStream | null;
   remoteStream: MediaStream | null;
   peerConnection: RTCPeerConnection;
@@ -64,10 +67,21 @@ export const useCallStore = create<Call>((set, get) => ({
   peerConnection: new RTCPeerConnection(),
   remoteIceCandidates: new Set([]),
   startCall: async (passphrase) => {
-    const { isAudio, isCamera, joinCall, createCall, endCall } = get();
+    const {
+      isAudioEnabled,
+      isCameraEnabled,
+      joinCall,
+      createCall,
+      endCall,
+      cameraPerspective,
+    } = get();
     let stream;
     try {
-      stream = await getUserStream(isAudio, isCamera);
+      stream = await getUserStream(
+        isAudioEnabled,
+        isCameraEnabled,
+        cameraPerspective,
+      );
     } catch {
       router.navigate("/", {
         state: { message: "Permissions of camera and audio are required!" },
@@ -224,23 +238,77 @@ export const useCallStore = create<Call>((set, get) => ({
     });
     set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
   },
-  isAudio: true,
+  isAudioEnabled: false,
   switchAudio: async () => {
-    const { userStream, isAudio } = get();
+    const { userStream, isAudioEnabled } = get();
     userStream?.getAudioTracks().forEach((track) => {
-      track.enabled = !isAudio;
+      track.enabled = !isAudioEnabled;
     });
 
-    set(() => ({ isAudio: !isAudio }));
+    set(() => ({ isAudioEnabled: !isAudioEnabled }));
   },
-  isCamera: true,
+  isCameraEnabled: true,
+  cameraPerspective: "user",
   switchCamera: async () => {
-    const { userStream, isCamera } = get();
+    const { userStream, isCameraEnabled } = get();
     userStream?.getVideoTracks().forEach((track) => {
-      track.enabled = !isCamera;
+      track.enabled = !isCameraEnabled;
     });
 
-    set(() => ({ isCamera: !isCamera }));
+    set(() => ({ isCameraEnabled: !isCameraEnabled }));
+  },
+  canSwitchCameraPerspective: true,
+  switchCameraPerspective: async () => {
+    const {
+      peerConnection,
+      cameraPerspective,
+      userStream,
+      canSwitchCameraPerspective,
+    } = get();
+    if (!canSwitchCameraPerspective) {
+      toast("You don't have a rear facing camera to switch to");
+      return;
+    }
+    const newCameraPerspective =
+      cameraPerspective === "user" ? "environment" : "user";
+
+    const newUserStream = await getUserStream(
+      false,
+      true,
+      newCameraPerspective,
+    );
+    set(() => ({ isCameraEnabled: true }));
+
+    // check if the user can switch for future uses
+    if (cameraPerspective === "user") {
+      const newTrackSettings = newUserStream.getVideoTracks()[0].getSettings();
+      if (
+        !newTrackSettings.facingMode ||
+        newTrackSettings.facingMode === "user"
+      ) {
+        toast("You don't have a rear facing camera to switch to");
+        set(() => ({ canSwitchCameraPerspective: false }));
+        return;
+      }
+    }
+
+    // stop older video track and remove it
+    const videoTrack = userStream?.getVideoTracks()[0];
+    videoTrack?.stop();
+    if (videoTrack) {
+      userStream?.removeTrack(videoTrack);
+    }
+
+    // add new video track to the ui and to the webrtc connection
+    const newVideoTrack = newUserStream.getVideoTracks()[0];
+    userStream?.addTrack(newVideoTrack);
+    const sender = peerConnection
+      .getSenders()
+      .find((s) => s.track?.kind === "video");
+    sender?.replaceTrack(newVideoTrack);
+
+    // modify the perspective
+    set(() => ({ cameraPerspective: newCameraPerspective }));
   },
   endCall: async () => {
     const { peerConnection, subscriptions, passphrase } = get();
@@ -327,13 +395,18 @@ export const useCallStore = create<Call>((set, get) => ({
   },
 }));
 
-const getUserStream = (audio: boolean, video: boolean) => {
+const getUserStream = (
+  audio: boolean,
+  video: boolean,
+  perspective: "environment" | "user",
+) => {
   return navigator.mediaDevices.getUserMedia({
     audio,
     video: video
       ? {
           width: { min: 1024, ideal: 1280, max: 1920 },
           height: { min: 576, ideal: 720, max: 1080 },
+          facingMode: perspective,
         }
       : video,
   });

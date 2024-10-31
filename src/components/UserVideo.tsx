@@ -15,30 +15,34 @@ import useWindowDimensions from "../hooks/useWindowDimensions";
 
 const UserVideo: React.FC = () => {
   const userStream = useCallStore((state) => state.userStream);
-  const isAudio = useCallStore((state) => state.isAudio);
+  const isAudioEnabled = useCallStore((state) => state.isAudioEnabled);
   const switchAudio = useCallStore((state) => state.switchAudio);
-  const isCamera = useCallStore((state) => state.isCamera);
+  const isCameraEnabled = useCallStore((state) => state.isCameraEnabled);
   const switchCamera = useCallStore((state) => state.switchCamera);
 
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     const userVideo = userVideoRef.current;
-    if (userVideo) {
-      if (userVideo.srcObject !== userStream) {
-        userVideo.srcObject = userStream;
-        if (userStream)
-          userVideo
-            .play()
-            .catch((error) => console.error("Play error:", error));
-      }
-    }
 
-    return () => {
-      if (userVideo && userVideo.srcObject) {
+    if (userVideo) {
+      // Set the new stream as the source object
+      userVideo.srcObject = userStream;
+
+      // Wait for metadata to load before playing
+      const playVideo = () => {
+        userVideo.play().catch((error) => console.error("Play error:", error));
+      };
+      // Listen for loadedmetadata event, then play video
+      userVideo.addEventListener("loadedmetadata", playVideo);
+
+      // Clean up by stopping tracks and removing the event listener
+      return () => {
+        userVideo.pause();
+        userVideo.removeEventListener("loadedmetadata", playVideo);
         userStream?.getTracks().forEach((track) => track.stop());
-        userVideo.srcObject = null; // Clean up media stream only if necessary
-      }
-    };
+        userVideo.srcObject = null;
+      };
+    }
   }, [userStream]);
 
   return (
@@ -64,7 +68,7 @@ const UserVideo: React.FC = () => {
           className="flex w-[50%] items-center justify-center"
         >
           <div className="flex items-center gap-[2px] text-white md:gap-1">
-            {isAudio ? (
+            {isAudioEnabled ? (
               <SpeakerWaveSolid className="h-5 w-5" />
             ) : (
               <SpeakerXMarkSolid className="h-5 w-5" />
@@ -77,7 +81,7 @@ const UserVideo: React.FC = () => {
           className="flex w-[50%] items-center justify-center text-white"
         >
           <div className="flex items-center gap-[2px] md:gap-1">
-            {isCamera ? (
+            {isCameraEnabled ? (
               <VideoCameraOutline className="h-5 w-5" />
             ) : (
               <VideoCameraSlashOutline className="h-5 w-5" />

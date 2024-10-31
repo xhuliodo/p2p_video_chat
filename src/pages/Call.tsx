@@ -4,13 +4,23 @@ import { useCallStore } from "../state/call";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
-import { PhoneXMarkSolid, ShareSolid } from "@graywolfai/react-heroicons";
+import {
+  ArrowsUpDownSolid,
+  PhoneXMarkSolid,
+  ShareSolid,
+} from "@graywolfai/react-heroicons";
 
 export const Call = () => {
   const endCall = useCallStore((state) => state.endCall);
   const startCall = useCallStore((state) => state.startCall);
   const isCreator = useCallStore((state) => state.isCreator);
   const solo = useCallStore((state) => state.solo);
+  const switchCameraPerspective = useCallStore(
+    (state) => state.switchCameraPerspective,
+  );
+  const canSwitchCameraPerspective = useCallStore(
+    (state) => state.canSwitchCameraPerspective,
+  );
   const navigate = useNavigate();
 
   const { passphrase } = useParams();
@@ -18,7 +28,6 @@ export const Call = () => {
     if (passphrase) {
       startCall(passphrase);
     }
-
   }, [passphrase, startCall]);
 
   useEffect(() => {
@@ -73,14 +82,22 @@ export const Call = () => {
         <div className="flex h-full flex-col justify-end gap-10 align-bottom">
           <button
             name="Share"
-            className="rounded-full bg-blue-500 p-3 text-white"
+            className="rounded-full bg-blue-500 p-3 text-white active:bg-blue-700"
             onClick={onClickShare}
           >
             <ShareSolid className="h-7 w-7" />
           </button>
           <button
+            name="Switch"
+            className="rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
+            onClick={switchCameraPerspective}
+            disabled={!canSwitchCameraPerspective}
+          >
+            <ArrowsUpDownSolid className="h-7 w-7" />
+          </button>
+          <button
             name="Leave"
-            className="rounded-full bg-red-500 p-3 text-white"
+            className="rounded-full bg-red-500 p-3 text-white active:bg-red-700"
             onClick={onClickLeave}
           >
             <PhoneXMarkSolid className="h-7 w-7" />
