@@ -44,7 +44,7 @@ interface Call {
   cameraPerspective: "environment" | "user";
   switchCamera: () => void;
   canSwitchCameraPerspective: boolean;
-  switchCameraPerspective: () => void;
+  switchCameraPerspective: () => Promise<void>;
   userStream: MediaStream | null;
   remoteStream: MediaStream | null;
   peerConnection: RTCPeerConnection;
@@ -238,7 +238,7 @@ export const useCallStore = create<Call>((set, get) => ({
     });
     set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
   },
-  isAudioEnabled: false,
+  isAudioEnabled: true,
   switchAudio: async () => {
     const { userStream, isAudioEnabled } = get();
     userStream?.getAudioTracks().forEach((track) => {

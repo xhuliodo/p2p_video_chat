@@ -2,7 +2,7 @@ import { RemoteVideo } from "../components/RemoteVideo";
 import { DraggableAndResizableUserVideo } from "../components/UserVideo";
 import { useCallStore } from "../state/call";
 import { useNavigate, useParams } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import {
   ArrowsUpDownSolid,
@@ -72,6 +72,8 @@ export const Call = () => {
     };
   });
 
+  const [isSwitchDisabled, setIsSwitchDisabled] = useState(false);
+
   return (
     <div className="callScreen h-dvh w-screen">
       <DraggableAndResizableUserVideo />
@@ -90,8 +92,12 @@ export const Call = () => {
           <button
             name="Switch"
             className="rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
-            onClick={switchCameraPerspective}
-            disabled={!canSwitchCameraPerspective}
+            onClick={async () => {
+              setIsSwitchDisabled(true);
+              await switchCameraPerspective();
+              setIsSwitchDisabled(false);
+            }}
+            disabled={!canSwitchCameraPerspective || isSwitchDisabled}
           >
             <ArrowsUpDownSolid className="h-7 w-7" />
           </button>
