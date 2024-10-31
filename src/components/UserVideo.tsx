@@ -63,7 +63,7 @@ const UserVideo: React.FC = () => {
         )}
       </div>
 
-      <div className="stopDrag z-20 flex place-content-evenly items-center">
+      <div className="stopDrag flex place-content-evenly items-center">
         <button
           onClick={switchAudio}
           className="flex w-[50%] items-center justify-center"
@@ -177,7 +177,7 @@ export const DraggableAndResizableUserVideo = () => {
     >
       <div
         ref={nodeRef}
-        className={`${!solo && "absolute z-10"} h-fit w-fit rounded-md bg-[#008B8B] transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
+        className={`${!solo && "absolute z-10 rounded-md"} h-fit w-fit bg-[#008B8B] transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
       >
         <Resizable
           bounds="window"
@@ -204,13 +204,13 @@ export const DraggableAndResizableUserVideo = () => {
             topLeft: false,
             right: false,
             top: false,
-            topRight: true,
+            topRight: !solo,
           }}
           handleComponent={{
-            topRight: <Handle className="rotate-90" />,
+            topRight: <Handle className="rotate-90 h-10 w-10 text-gray-300 active:text-gray-500" />,
           }}
           handleClasses={{
-            topRight: `z-10 rounded-full bg-gray-100 active:bg-gray-300 ${solo && "hidden"}`,
+            topRight: `z-20 !h-fit !w-fit !-right-[25px] !-top-[25px]`,
           }}
         >
           <UserVideo />

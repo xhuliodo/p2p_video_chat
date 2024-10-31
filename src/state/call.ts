@@ -140,6 +140,7 @@ export const useCallStore = create<Call>((set, get) => ({
           router.navigate("/", {
             state: { message: "Your buddy left the call." },
           });
+          return;
         }
       },
     });
@@ -151,6 +152,14 @@ export const useCallStore = create<Call>((set, get) => ({
     peerConnection: RTCPeerConnection,
   ) => {
     console.log("room exists, joining it");
+    const foundCall = callDocSnap.data() as CallDb;
+    if (foundCall.answer) {
+      router.navigate("/", {
+        state: { message: "Room is full!" },
+      });
+      return;
+    }
+
     // Handle ICE candidates
     peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
@@ -160,9 +169,7 @@ export const useCallStore = create<Call>((set, get) => ({
       }
     };
 
-    const foundCall = callDocSnap.data() as CallDb;
     await peerConnection.setRemoteDescription(foundCall.offer);
-
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     await updateDoc(callDocRef, { answer });
