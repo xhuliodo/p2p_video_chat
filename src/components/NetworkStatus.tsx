@@ -1,4 +1,4 @@
-import { SignalSlashSolid, SignalSolid } from "@graywolfai/react-heroicons";
+import { Icon } from "@iconify/react/dist/iconify.js";
 import { useCallStore } from "../state/call";
 import { useEffect } from "react";
 
@@ -18,10 +18,11 @@ export const NetworkStatus = () => {
   });
 
   return (
-    <div className="fixed right-[5%] top-[5%] text-white">
-      {remoteNetworkStatus === "good" && <SignalSolid className="h-7 w-7" />}
-      {remoteNetworkStatus === "poor" && (
-        <SignalSlashSolid className="h-7 w-7" />
+    <div className="fixed right-[5%] top-[5%] h-10 w-10 rounded-md bg-gray-200 p-1">
+      {remoteNetworkStatus === "good" ? (
+        <Icon icon="mdi:signal" className="h-full w-full" />
+      ) : (
+        <Icon icon="mdi:signal-off" className="h-full w-full" />
       )}
     </div>
   );

@@ -4,11 +4,7 @@ import { useCallStore } from "../state/call";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
-import {
-  ArrowsUpDownSolid,
-  PhoneXMarkSolid,
-  ShareSolid,
-} from "@graywolfai/react-heroicons";
+import { Icon } from "@iconify/react";
 
 export const Call = () => {
   const endCall = useCallStore((state) => state.endCall);
@@ -84,14 +80,14 @@ export const Call = () => {
         <div className="flex h-full flex-col justify-end gap-10 align-bottom">
           <button
             name="Share"
-            className="rounded-full bg-blue-500 p-3 text-white active:bg-blue-700"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 p-3 text-white active:bg-blue-700"
             onClick={onClickShare}
           >
-            <ShareSolid className="h-7 w-7" />
+            <Icon icon="material-symbols:share" className="h-full w-full" />
           </button>
           <button
             name="Switch"
-            className="rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
             onClick={async () => {
               setIsSwitchDisabled(true);
               await switchCameraPerspective();
@@ -99,14 +95,17 @@ export const Call = () => {
             }}
             disabled={!canSwitchCameraPerspective || isSwitchDisabled}
           >
-            <ArrowsUpDownSolid className="h-7 w-7" />
+            <Icon
+              icon="material-symbols:flip-camera-ios"
+              className="h-full w-full"
+            />
           </button>
           <button
             name="Leave"
-            className="rounded-full bg-red-500 p-3 text-white active:bg-red-700"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 p-3 text-white active:bg-red-700"
             onClick={onClickLeave}
           >
-            <PhoneXMarkSolid className="h-7 w-7" />
+            <Icon icon="material-symbols:call-end" className="h-full w-full" />
           </button>
         </div>
       </div>

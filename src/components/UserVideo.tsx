@@ -1,19 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useCallStore } from "../state/call";
-import {
-  SpeakerWaveSolid,
-  SpeakerXMarkSolid,
-  VideoCameraOutline,
-  VideoCameraSlashOutline,
-} from "@graywolfai/react-heroicons";
+
 import { LoadingSpinner } from "./LoadingSpinner";
 import Draggable, { DraggableEventHandler } from "react-draggable";
 import { Resizable } from "re-resizable";
 import { Direction } from "re-resizable/lib/resizer";
 import { Handle } from "./Handle";
 import useWindowDimensions from "../hooks/useWindowDimensions";
+import { Icon } from "@iconify/react";
 
-const UserVideo: React.FC = () => {
+interface UserVideoProps {
+  solo: boolean;
+}
+const UserVideo: React.FC<UserVideoProps> = ({ solo }) => {
   const userStream = useCallStore((state) => state.userStream);
   const isAudioEnabled = useCallStore((state) => state.isAudioEnabled);
   const switchAudio = useCallStore((state) => state.switchAudio);
@@ -70,9 +69,15 @@ const UserVideo: React.FC = () => {
         >
           <div className="flex items-center gap-[2px] text-white md:gap-1">
             {isAudioEnabled ? (
-              <SpeakerWaveSolid className="h-5 w-5" />
+              <Icon
+                icon="material-symbols:mic"
+                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+              />
             ) : (
-              <SpeakerXMarkSolid className="h-5 w-5" />
+              <Icon
+                icon="material-symbols:mic-off"
+                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+              />
             )}
           </div>
         </button>
@@ -83,9 +88,15 @@ const UserVideo: React.FC = () => {
         >
           <div className="flex items-center gap-[2px] md:gap-1">
             {isCameraEnabled ? (
-              <VideoCameraOutline className="h-5 w-5" />
+              <Icon
+                icon="mdi:video"
+                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+              />
             ) : (
-              <VideoCameraSlashOutline className="h-5 w-5" />
+              <Icon
+                icon="mdi:video-off"
+                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+              />
             )}
           </div>
         </button>
@@ -207,13 +218,15 @@ export const DraggableAndResizableUserVideo = () => {
             topRight: !solo,
           }}
           handleComponent={{
-            topRight: <Handle className="rotate-90 h-10 w-10 text-gray-300 active:text-gray-500" />,
+            topRight: (
+              <Handle className="h-10 w-10 rotate-90 text-gray-300 active:text-gray-500" />
+            ),
           }}
           handleClasses={{
             topRight: `z-20 !h-fit !w-fit !-right-[25px] !-top-[25px]`,
           }}
         >
-          <UserVideo />
+          <UserVideo solo={solo} />
         </Resizable>
       </div>
     </Draggable>

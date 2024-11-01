@@ -44,7 +44,7 @@ export const Home = () => {
 
   return (
     <div className="h-dvh w-screen">
-      <div className="flex h-full flex-col items-center justify-center bg-[#008B8B] gap-5 md:gap-14">
+      <div className="flex h-full flex-col items-center justify-center gap-5 bg-[#008B8B] md:gap-14">
         <img className="-mb-7" src="logo.svg" />
         <div className="flex w-[80%] flex-col items-center justify-center">
           <span className="text-center text-5xl text-white md:text-7xl">
