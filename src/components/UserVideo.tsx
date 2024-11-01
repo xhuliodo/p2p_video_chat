@@ -5,7 +5,6 @@ import { LoadingSpinner } from "./LoadingSpinner";
 import Draggable, { DraggableEventHandler } from "react-draggable";
 import { Resizable } from "re-resizable";
 import { Direction } from "re-resizable/lib/resizer";
-import { Handle } from "./Handle";
 import useWindowDimensions from "../hooks/useWindowDimensions";
 import { Icon } from "@iconify/react";
 
@@ -219,11 +218,14 @@ export const DraggableAndResizableUserVideo = () => {
           }}
           handleComponent={{
             topRight: (
-              <Handle className="h-10 w-10 rotate-90 text-gray-300 active:text-gray-500" />
+              <Icon
+                className="h-10 w-10 -rotate-90 text-[#008B8B]"
+                icon="lets-icons:resize-down-right"
+              />
             ),
           }}
           handleClasses={{
-            topRight: `z-20 !h-fit !w-fit !-right-[25px] !-top-[25px]`,
+            topRight: `z-20 !h-fit !w-fit !-right-[15px] !-top-[15px]`,
           }}
         >
           <UserVideo solo={solo} />
