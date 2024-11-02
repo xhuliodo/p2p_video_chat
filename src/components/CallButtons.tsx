@@ -55,25 +55,32 @@ export const CallButtons: FC = () => {
   });
 
   return (
-    <div ref={toggleContainer} className="fixed bottom-[5%] right-[5%]">
+    <div
+      ref={toggleContainer}
+      className={`fixed bottom-[5%] right-[5%] ${solo && "bottom-[10%]"}`}
+    >
       <div
         className={`flex flex-col overflow-hidden rounded-full bg-gray-200 p-2 md:p-1`}
       >
         {solo && (
           <button
             name="Share"
-            className="mb-5 mt-1 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 p-3 text-white active:bg-blue-700"
+            className="mb-5 mt-1 flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-blue-500 p-3 text-white active:bg-blue-700"
             onClick={onClickShare}
           >
             <Icon icon="material-symbols:share" className="h-full w-full" />
           </button>
         )}
         <div
-          className={`${isCollapsed ? "max-h-0 opacity-0" : "mb-5 max-h-96"} flex flex-col items-center justify-center overflow-hidden transition-all duration-300 ease-in-out`}
+          className={`origin-top transform-gpu ${
+            isCollapsed
+              ? "h-0 scale-y-0 opacity-0"
+              : "mb-5 h-auto scale-y-100 opacity-100"
+          } ${!solo && "mt-1"} flex flex-col items-center justify-center overflow-hidden transition-all duration-300 ease-in-out`}
         >
           <button
             name="Switch"
-            className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
+            className="mb-5 flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
             onClick={async () => {
               setIsSwitchDisabled(true);
               await switchCameraPerspective();
@@ -88,13 +95,17 @@ export const CallButtons: FC = () => {
           </button>
           <button
             name="Message"
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500 p-3 text-white active:bg-green-700 disabled:bg-gray-300"
+            className="flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-green-500 p-3 text-white active:bg-green-700 disabled:bg-gray-300"
           >
             <Icon icon="mdi:message" className="h-full w-full" />
           </button>
         </div>
         <div
-          className={`flex w-fit items-center justify-center ${!isCollapsed ? "max-h-0 opacity-0" : "mb-5 max-h-96"} overflow-hidden transition-all duration-300 ease-in-out`}
+          className={`flex w-fit transform-gpu items-center justify-center ${
+            isCollapsed
+              ? "mb-5 h-auto translate-y-0 scale-y-100 opacity-100"
+              : "h-0 translate-y-[-100%] scale-y-0 opacity-0"
+          } overflow-hidden transition-all duration-300 ease-in-out`}
           onClick={(e) => {
             e.stopPropagation();
             toggleCollapse();
@@ -102,7 +113,7 @@ export const CallButtons: FC = () => {
         >
           <button
             name="More"
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-300 p-3"
+            className="flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-gray-300 p-3"
           >
             <Icon
               icon="material-symbols:more-horiz"
@@ -112,7 +123,7 @@ export const CallButtons: FC = () => {
         </div>
         <button
           name="Leave"
-          className="mb-1 flex h-14 w-14 items-center justify-center rounded-full bg-red-500 p-3 text-white active:bg-red-700"
+          className="mb-1 flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-red-500 p-3 text-white active:bg-red-700"
           onClick={onClickLeave}
         >
           <Icon icon="material-symbols:call-end" className="h-full w-full" />
