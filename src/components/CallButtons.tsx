@@ -16,6 +16,7 @@ export const CallButtons: FC = () => {
   );
   const toggleMessages = useCallStore((state) => state.toggleMessages);
   const canSendMessage = useCallStore((state) => state.canSendMessage);
+  const newMessage = useCallStore((state) => state.newMessage);
 
   const onClickShare = () => {
     const shareData = {
@@ -102,6 +103,9 @@ export const CallButtons: FC = () => {
             disabled={!canSendMessage}
           >
             <Icon icon="mdi:message" className="h-full w-full" />
+            {newMessage && (
+              <div className="fixed right-0 top-0 h-3 w-3 rounded-full border border-white bg-[#008B8B]"></div>
+            )}
           </button>
         </div>
         <div
@@ -123,6 +127,9 @@ export const CallButtons: FC = () => {
               icon="material-symbols:more-horiz"
               className="h-full w-full"
             />
+            {newMessage && (
+              <div className="fixed right-0 top-0 h-3 w-3 rounded-full border border-white bg-[#008B8B]"></div>
+            )}
           </button>
         </div>
         <button

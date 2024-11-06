@@ -68,6 +68,7 @@ interface Call {
   sendMessage: (content: string) => void;
   canSendMessage: boolean;
   showMessages: boolean;
+  newMessage: boolean;
   toggleMessages: () => void;
 }
 
@@ -441,10 +442,14 @@ export const useCallStore = create<Call>((set, get) => ({
   messages: [],
   messageChannel: null,
   receiveMessage: (event: MessageEvent) => {
+    const { showMessages } = get();
     const message = JSON.parse(event.data) as Message;
     set((state) => ({
       messages: [...state.messages, { ...message, sentByUser: false }],
     }));
+    if (!showMessages) {
+      set(() => ({ newMessage: true }));
+    }
   },
   sendMessage: (content: string) => {
     const { messageChannel } = get();
@@ -463,7 +468,14 @@ export const useCallStore = create<Call>((set, get) => ({
   },
   canSendMessage: false,
   showMessages: false,
-  toggleMessages: () => set((state) => ({ showMessages: !state.showMessages })),
+  newMessage: false,
+  toggleMessages: () => {
+    const { showMessages, newMessage } = get();
+    if (!showMessages && newMessage) {
+      set(() => ({ newMessage: false }));
+    }
+    set(() => ({ showMessages: !showMessages }));
+  },
 }));
 
 const getUserStream = (
