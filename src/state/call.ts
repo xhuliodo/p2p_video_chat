@@ -111,7 +111,10 @@ export const useCallStore = create<Call>((set, get) => ({
     });
 
     // Setup message channel
-    const messageChannel = peerConnection.createDataChannel("chat");
+    const messageChannel = peerConnection.createDataChannel("chat", {
+      negotiated: true,
+      id: 0,
+    });
     messageChannel.onopen = () => {
       console.log("Message channel is open");
       set(() => ({ canSendMessage: true }));
@@ -438,7 +441,6 @@ export const useCallStore = create<Call>((set, get) => ({
   messages: [],
   messageChannel: null,
   receiveMessage: (event: MessageEvent) => {
-    console.log(event);
     const message = JSON.parse(event.data) as Message;
     set((state) => ({
       messages: [...state.messages, { ...message, sentByUser: false }],

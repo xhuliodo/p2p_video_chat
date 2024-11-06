@@ -55,12 +55,6 @@ export const Messages: FC = () => {
 
   useEffect(() => {
     if (messageDivRef.current) {
-      console.log(
-        "h",
-        messageDivRef.current.scrollHeight,
-        "t",
-        messageDivRef.current.scrollTop,
-      );
       messageDivRef.current.scroll({
         behavior: "auto",
         top: messageDivRef.current.scrollHeight,
