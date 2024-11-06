@@ -23,6 +23,12 @@ interface CallDb {
   answerCandidates?: RTCIceCandidate[];
 }
 
+interface Message {
+  content: string;
+  timestamp: number;
+  sentByUser?: boolean;
+}
+
 interface Call {
   ongoing: boolean;
   solo: boolean;
@@ -56,6 +62,13 @@ interface Call {
   poorNetworkQualityCount: number;
   poorNetworkQualityThreshold: number;
   checkNetworkQuality: () => void;
+  messages: Message[];
+  messageChannel: RTCDataChannel | null;
+  receiveMessage: (event: MessageEvent) => void;
+  sendMessage: (content: string) => void;
+  canSendMessage: boolean;
+  showMessages: boolean;
+  toggleMessages: () => void;
 }
 
 export const useCallStore = create<Call>((set, get) => ({
@@ -75,6 +88,7 @@ export const useCallStore = create<Call>((set, get) => ({
       createCall,
       endCall,
       cameraPerspective,
+      receiveMessage,
     } = get();
     let stream;
     try {
@@ -95,6 +109,22 @@ export const useCallStore = create<Call>((set, get) => ({
     stream.getTracks().forEach((track) => {
       peerConnection.addTrack(track, stream);
     });
+
+    // Setup message channel
+    const messageChannel = peerConnection.createDataChannel("chat");
+    messageChannel.onopen = () => {
+      console.log("Message channel is open");
+      set(() => ({ canSendMessage: true }));
+    };
+    messageChannel.onclose = () => {
+      console.log("Message channel is closed");
+      set(() => ({ canSendMessage: false, showMessages: false }));
+    };
+    messageChannel.onerror = (e) => {
+      console.log("something went wrong: ", e);
+    };
+    messageChannel.onmessage = receiveMessage;
+    set(() => ({ messageChannel }));
 
     set(() => ({
       ongoing: true,
@@ -322,8 +352,9 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   endCall: async () => {
-    const { peerConnection, subscriptions, passphrase } = get();
+    const { peerConnection, subscriptions, passphrase, messageChannel } = get();
     set(() => ({ solo: true, remoteStream: null }));
+    messageChannel?.close();
     peerConnection?.close();
     subscriptions.forEach((unsub) => unsub());
     const callRef = doc(firestore, "calls", passphrase);
@@ -345,7 +376,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const { peerConnection } = get();
 
     if (!peerConnection || peerConnection.iceConnectionState !== "connected") {
-      console.log("Cannot check stats: Peer is disconnected or not connected");
+      // console.log("Cannot check stats: Peer is disconnected or not connected");
       set(() => ({ remoteNetworkStatus: "undefined" }));
       return;
     }
@@ -387,16 +418,16 @@ export const useCallStore = create<Call>((set, get) => ({
 
       // Mark as "poor" only after consistent bad readings
       if (get().poorNetworkQualityCount >= get().poorNetworkQualityThreshold) {
-        console.log(`Poor network quality detected: 
-          Packet loss: ${packetLossRate.toFixed(2)}%, 
-          Jitter: ${jitter.toFixed(3)}s, 
-          RTT: ${roundTripTime.toFixed(3)}s`);
+        // console.log(`Poor network quality detected:
+        //   Packet loss: ${packetLossRate.toFixed(2)}%,
+        //   Jitter: ${jitter.toFixed(3)}s,
+        //   RTT: ${roundTripTime.toFixed(3)}s`);
         set(() => ({ remoteNetworkStatus: "poor" }));
       } else {
-        console.log(`Good network quality: 
-          Packet loss: ${packetLossRate.toFixed(2)}%, 
-          Jitter: ${jitter.toFixed(3)}s, 
-          RTT: ${roundTripTime.toFixed(3)}s`);
+        // console.log(`Good network quality:
+        //   Packet loss: ${packetLossRate.toFixed(2)}%,
+        //   Jitter: ${jitter.toFixed(3)}s,
+        //   RTT: ${roundTripTime.toFixed(3)}s`);
         set(() => ({ remoteNetworkStatus: "good" }));
       }
     } catch (error) {
@@ -404,6 +435,32 @@ export const useCallStore = create<Call>((set, get) => ({
       set(() => ({ remoteNetworkStatus: "undefined" }));
     }
   },
+  messages: [],
+  messageChannel: null,
+  receiveMessage: (event: MessageEvent) => {
+    const message = JSON.parse(event.data) as Message;
+    set((state) => ({
+      messages: [...state.messages, { ...message, sentByUser: false }],
+    }));
+  },
+  sendMessage: (content: string) => {
+    const { messageChannel } = get();
+    const now = Date.now();
+    try {
+      messageChannel?.send(JSON.stringify({ content, timestamp: now }));
+      set((state) => ({
+        messages: [
+          ...state.messages,
+          { content, timestamp: now, sentByUser: true },
+        ],
+      }));
+    } catch (e) {
+      console.log("could not send message with err:", e);
+    }
+  },
+  canSendMessage: false,
+  showMessages: false,
+  toggleMessages: () => set((state) => ({ showMessages: !state.showMessages })),
 }));
 
 const getUserStream = (

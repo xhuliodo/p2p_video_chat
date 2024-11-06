@@ -14,6 +14,8 @@ export const CallButtons: FC = () => {
   const canSwitchCameraPerspective = useCallStore(
     (state) => state.canSwitchCameraPerspective,
   );
+  const toggleMessages = useCallStore((state) => state.toggleMessages);
+  const canSendMessage = useCallStore((state) => state.canSendMessage);
 
   const onClickShare = () => {
     const shareData = {
@@ -95,7 +97,9 @@ export const CallButtons: FC = () => {
           </button>
           <button
             name="Message"
-            className="flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-green-500 p-3 text-white active:bg-green-700 disabled:bg-gray-300"
+            className="flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-[#008B8B] p-3 text-white active:bg-[#008B8B]/80 disabled:bg-gray-300"
+            onClick={toggleMessages}
+            disabled={!canSendMessage}
           >
             <Icon icon="mdi:message" className="h-full w-full" />
           </button>

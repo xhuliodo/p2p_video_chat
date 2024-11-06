@@ -5,6 +5,7 @@ import { useParams } from "react-router-dom";
 import { useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import { CallButtons } from "../components/CallButtons";
+import { Messages } from "../components/Messages";
 
 export const Call = () => {
   const endCall = useCallStore((state) => state.endCall);
@@ -38,6 +39,7 @@ export const Call = () => {
       <DraggableAndResizableUserVideo />
       <RemoteVideo />
       <CallButtons />
+      <Messages />
       <ToastContainer
         position="top-center"
         style={{ width: "80%" }}
