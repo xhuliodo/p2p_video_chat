@@ -5,7 +5,7 @@ import { LoadingSpinner } from "./LoadingSpinner";
 import Draggable, { DraggableEventHandler } from "react-draggable";
 import { Resizable } from "re-resizable";
 import { Direction } from "re-resizable/lib/resizer";
-import useWindowDimensions from "../hooks/useWindowDimensions";
+import { useWindowDimensions } from "../hooks/useWindowDimensions";
 import { Icon } from "@iconify/react";
 
 interface UserVideoProps {
@@ -111,7 +111,7 @@ export const DraggableAndResizableUserVideo = () => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
-  const windowDimensions = useWindowDimensions();
+  const { windowDimensions, previousDimensions } = useWindowDimensions();
 
   const deltaHeight = useRef(0);
   const [isResizing, setIsResizing] = useState(false);
@@ -121,20 +121,43 @@ export const DraggableAndResizableUserVideo = () => {
   });
 
   useEffect(() => {
+    setPosition((prevPosition) => {
+      const newX = solo ? 0 : windowDimensions.width * 0.05;
+      const newY = solo ? 0 : windowDimensions.height * 0.95 - 192;
+
+      // When not solo, maintain the relative position proportions if resizing
+      const x = solo
+        ? 0
+        : prevPosition.x * (windowDimensions.width / previousDimensions.width);
+      const y = solo
+        ? 0
+        : prevPosition.y *
+          (windowDimensions.height / previousDimensions.height);
+
+      return { x: x || newX, y: y || newY }; // Default to bottom-left if proportions are not set
+    });
+  }, [
+    windowDimensions.height,
+    windowDimensions.width,
+    previousDimensions.height,
+    previousDimensions.width,
+    solo,
+  ]);
+  useEffect(() => {
     if (!solo) {
-      setPosition({
-        x: windowDimensions.width * 0.05,
-        y: windowDimensions.height * 0.95 - 192,
-      });
-      setSize({ width: 128, height: 192 });
+      const fullscreen =
+        size.height === windowDimensions.height &&
+        size.width === windowDimensions.width;
+      if (fullscreen) {
+        setSize({ width: 128, height: 192 });
+      }
     } else {
-      setPosition({ x: 0, y: 0 });
       setSize({
         width: windowDimensions.width,
         height: windowDimensions.height,
       });
     }
-  }, [solo, windowDimensions.height, windowDimensions.width]);
+  }, [size.height, size.width, solo, windowDimensions.height, windowDimensions.width]);
   const handleOnDragStart: DraggableEventHandler = () => {
     setIsDragging(true);
   };

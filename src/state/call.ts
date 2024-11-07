@@ -15,6 +15,7 @@ import {
 import { v7 } from "uuid";
 import { toast } from "react-toastify";
 import { router } from "../routes";
+import { sounds } from "../notifications/sounds";
 
 interface CallDb {
   offer: RTCSessionDescriptionInit;
@@ -139,6 +140,9 @@ export const useCallStore = create<Call>((set, get) => ({
 
     // Handle incoming tracks from remote peers
     peerConnection.ontrack = (event) => {
+      if (event.streams.length) {
+        sounds.callStarted();
+      }
       event.streams.forEach((s) =>
         set(() => ({ solo: false, remoteStream: s })),
       );
@@ -356,6 +360,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   endCall: async () => {
+    sounds.callEnded();
     const { peerConnection, subscriptions, passphrase, messageChannel } = get();
     set(() => ({ solo: true, remoteStream: null }));
     messageChannel?.close();
@@ -449,6 +454,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
     if (!showMessages) {
       set(() => ({ newMessage: true }));
+      sounds.newMessage();
     }
   },
   sendMessage: (content: string) => {
