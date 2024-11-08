@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { v7 } from "uuid";
 import { toast } from "react-toastify";
 import { router } from "../routes";
-import { sounds } from "../notifications/sounds";
+// import { sounds } from "../notifications/sounds";
 import { toasts } from "../notifications/toasts";
 import {
   CallDb,
@@ -133,7 +133,7 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle incoming tracks from remote peers
     peerConnection.ontrack = (event) => {
       if (event.streams.length) {
-        sounds.callStartedSound.play();
+        // sounds.callStartedSound.play();
       }
       event.streams.forEach((s) =>
         set(() => ({ solo: false, remoteStream: s })),
@@ -264,7 +264,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const unsub = subscribeToCallUpdates(passphrase, handleCallUpdates);
     set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
   },
-  isAudioEnabled: false,
+  isAudioEnabled: true,
   switchAudio: async () => {
     const { userStream, isAudioEnabled } = get();
     userStream?.getAudioTracks().forEach((track) => {
@@ -340,7 +340,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   endCall: async () => {
-    sounds.callEndedSound.play();
+    // sounds.callEndedSound.play();
     const { peerConnection, subscriptions, passphrase, messageChannel } = get();
     set(() => ({ solo: true, remoteStream: null }));
     messageChannel?.close();
@@ -433,7 +433,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
     if (!showMessages) {
       set(() => ({ newMessage: true }));
-      sounds.newMessageSound.play();
+      // sounds.newMessageSound.play();
     }
   },
   sendMessage: (content: string) => {
