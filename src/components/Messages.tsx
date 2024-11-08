@@ -62,10 +62,7 @@ export const Messages: FC = () => {
     }
   }, [showMessages, messages]);
 
-  const onClickSendMessage = (
-    e: React.MouseEvent<HTMLElement> | React.TouchEvent<HTMLElement>,
-  ) => {
-    e.preventDefault();
+  const onClickSendMessage = () => {
     if (inputMessage.current?.value) {
       sendMessage(inputMessage.current.value);
       inputMessage.current.value = "";
@@ -121,6 +118,11 @@ export const Messages: FC = () => {
             ref={inputMessage}
             className="h-full grow border border-gray-300 p-2"
             placeholder="..."
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                onClickSendMessage();
+              }
+            }}
           ></input>
           <button
             onClick={onClickSendMessage}
