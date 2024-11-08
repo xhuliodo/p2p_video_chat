@@ -1,9 +1,9 @@
 import { FC, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
 import { useCallStore } from "../state/call";
 import { Icon } from "@iconify/react";
 import { useAutoCollapse } from "../hooks/useAutoCollapse";
+import { toasts } from "../notifications/toasts";
 
 export const CallButtons: FC = () => {
   const solo = useCallStore((state) => state.solo);
@@ -25,14 +25,14 @@ export const CallButtons: FC = () => {
       url: window.location.href, // or pass the passphrase here
     };
 
-    if (navigator.canShare(shareData)) {
+    if (!navigator.canShare) {
+      navigator.clipboard.writeText(window.location.href);
+      toasts.linkCopied();
+    } else {
       navigator
         .share(shareData)
         .then(() => console.log("Share successful"))
         .catch((error) => console.log("Error sharing:", error));
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast("Link copied");
     }
   };
 

@@ -1,34 +1,29 @@
 import { create } from "zustand";
-import { firestore } from "../firebase";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  onSnapshot,
-  Unsubscribe,
-  deleteDoc,
-  DocumentSnapshot,
-  DocumentReference,
-  arrayUnion,
-} from "firebase/firestore";
 import { v7 } from "uuid";
 import { toast } from "react-toastify";
 import { router } from "../routes";
 import { sounds } from "../notifications/sounds";
-
-interface CallDb {
-  offer: RTCSessionDescriptionInit;
-  offerCandidates?: RTCIceCandidate[];
-  answer?: RTCSessionDescriptionInit;
-  answerCandidates?: RTCIceCandidate[];
-}
+import { toasts } from "../notifications/toasts";
+import {
+  CallDb,
+  deleteCallByPassphrase,
+  getCallByPassphrase,
+  subscribeToCallUpdates,
+  updateCallAnswer,
+  updateCallAnswerIceCandidates,
+  updateCallLeft,
+  updateCallOffer,
+  updateCallOfferIceCandidates,
+} from "../firebase/firebase";
 
 interface Message {
   content: string;
   timestamp: number;
   sentByUser?: boolean;
 }
+
+type NetworkStatus = "undefined" | "good" | "poor";
+type CameraPerspective = "environment" | "user";
 
 interface Call {
   ongoing: boolean;
@@ -37,18 +32,15 @@ interface Call {
   isCreator: boolean;
   startCall: (passphrase: string) => Promise<void>;
   joinCall: (
-    callDocRef: DocumentReference,
-    callDocSnap: DocumentSnapshot,
+    passphrase: string,
+    foundCall: CallDb,
     peerConnection: RTCPeerConnection,
   ) => void;
-  createCall: (
-    callDocRef: DocumentReference,
-    peerConnection: RTCPeerConnection,
-  ) => void;
+  createCall: (passphrase: string, peerConnection: RTCPeerConnection) => void;
   isAudioEnabled: boolean;
   switchAudio: () => void;
   isCameraEnabled: boolean;
-  cameraPerspective: "environment" | "user";
+  cameraPerspective: CameraPerspective;
   switchCamera: () => void;
   shouldFlip: boolean;
   canSwitchCameraPerspective: boolean;
@@ -58,8 +50,8 @@ interface Call {
   peerConnection: RTCPeerConnection;
   remoteIceCandidates: Set<string>;
   endCall: () => Promise<void>;
-  subscriptions: Unsubscribe[];
-  remoteNetworkStatus: "good" | "poor" | "undefined";
+  subscriptions: (() => void)[];
+  remoteNetworkStatus: NetworkStatus;
   poorNetworkQualityCount: number;
   poorNetworkQualityThreshold: number;
   checkNetworkQuality: () => void;
@@ -141,7 +133,7 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle incoming tracks from remote peers
     peerConnection.ontrack = (event) => {
       if (event.streams.length) {
-        sounds.callStarted();
+        sounds.callStartedSound.play();
       }
       event.streams.forEach((s) =>
         set(() => ({ solo: false, remoteStream: s })),
@@ -154,43 +146,42 @@ export const useCallStore = create<Call>((set, get) => ({
       toast(state);
       if (state === "closed" || state === "failed") {
         await endCall();
-        deleteDoc(callDocRef);
+        deleteCallByPassphrase(passphrase);
         router.navigate("/", {
           state: { message: "Could not connect." },
         });
       }
     };
 
-    const callDocRef = doc(firestore, "calls", passphrase);
-    const callDocSnap = await getDoc(callDocRef);
+    const foundCall = await getCallByPassphrase(passphrase);
     // If the passphrase already exists in the database (answering a call)
-    if (callDocSnap.exists()) {
-      joinCall(callDocRef, callDocSnap, peerConnection);
+    if (!foundCall) {
+      createCall(passphrase, peerConnection);
     } else {
-      createCall(callDocRef, peerConnection);
+      joinCall(passphrase, foundCall, peerConnection);
     }
 
-    const sub = onSnapshot(callDocRef, {
-      next: async (doc) => {
-        if (doc.data()?.left) {
-          await endCall();
-          deleteDoc(callDocRef);
-          router.navigate("/", {
-            state: { message: "Your buddy left the call." },
-          });
-          return;
-        }
-      },
-    });
+    const handleCallUpdates = async (updatedCall: CallDb) => {
+      if (!updatedCall?.left) {
+        return;
+      }
+
+      await endCall();
+      const { passphrase } = get();
+      deleteCallByPassphrase(passphrase);
+      router.navigate("/", {
+        state: { message: "Your buddy left the call." },
+      });
+    };
+    const sub = subscribeToCallUpdates(passphrase, handleCallUpdates);
     set((state) => ({ subscriptions: [...state.subscriptions, sub] }));
   },
   joinCall: async (
-    callDocRef: DocumentReference,
-    callDocSnap: DocumentSnapshot,
+    passphrase: string,
+    foundCall: CallDb,
     peerConnection: RTCPeerConnection,
   ) => {
     console.log("room exists, joining it");
-    const foundCall = callDocSnap.data() as CallDb;
     if (foundCall.answer) {
       router.navigate("/", {
         state: { message: "Room is full!" },
@@ -201,27 +192,63 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle ICE candidates
     peerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        updateDoc(callDocRef, {
-          answerCandidates: arrayUnion(event.candidate.toJSON()),
-        });
+        updateCallAnswerIceCandidates(passphrase, event.candidate);
       }
     };
 
     await peerConnection.setRemoteDescription(foundCall.offer);
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
-    await updateDoc(callDocRef, { answer });
+    await updateCallAnswer(passphrase, answer);
 
     foundCall.offerCandidates?.forEach((c) => {
       peerConnection.addIceCandidate(c);
     });
 
-    const unsub = onSnapshot(callDocRef, {
-      next: (doc) => {
-        const updatedCall = doc.data() as CallDb;
-        const { peerConnection: currentPeerConnection, remoteIceCandidates } =
-          get();
-        updatedCall.offerCandidates?.forEach((c) => {
+    const handleCallUpdates = (updatedCall: CallDb) => {
+      const { peerConnection: currentPeerConnection, remoteIceCandidates } =
+        get();
+      updatedCall.offerCandidates?.forEach((c) => {
+        if (!remoteIceCandidates.has(c.candidate)) {
+          currentPeerConnection.addIceCandidate(c);
+          set((state) => ({
+            remoteIceCandidates: new Set([
+              ...state.remoteIceCandidates,
+              c.candidate,
+            ]),
+          }));
+        }
+      });
+    };
+    const unsub = subscribeToCallUpdates(passphrase, handleCallUpdates);
+
+    set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
+  },
+  createCall: async (passphrase: string, peerConnection: RTCPeerConnection) => {
+    // If the passphrase does not exist (creating a call)
+    console.log("call does not exist, creating it");
+    set(() => ({ isCreator: true }));
+
+    // Handle ICE candidates
+    peerConnection.onicecandidate = async (event) => {
+      if (event.candidate) {
+        updateCallOfferIceCandidates(passphrase, event.candidate);
+      }
+    };
+
+    // Create an offer to connect to the remote peer
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    await updateCallOffer(passphrase, offer);
+
+    const handleCallUpdates = (updatedCall: CallDb) => {
+      const { peerConnection: currentPeerConnection, remoteIceCandidates } =
+        get();
+      if (!currentPeerConnection.remoteDescription && updatedCall.answer) {
+        currentPeerConnection.setRemoteDescription(updatedCall.answer);
+      }
+      if (updatedCall.answerCandidates) {
+        updatedCall.answerCandidates.forEach((c) => {
           if (!remoteIceCandidates.has(c.candidate)) {
             currentPeerConnection.addIceCandidate(c);
             set((state) => ({
@@ -232,59 +259,12 @@ export const useCallStore = create<Call>((set, get) => ({
             }));
           }
         });
-      },
-    });
-
-    set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
-  },
-  createCall: async (
-    callDocRef: DocumentReference,
-    peerConnection: RTCPeerConnection,
-  ) => {
-    // If the passphrase does not exist (creating a call)
-    console.log("call does not exist, creating it");
-    set(() => ({ isCreator: true }));
-
-    // Handle ICE candidates
-    peerConnection.onicecandidate = async (event) => {
-      if (event.candidate) {
-        updateDoc(callDocRef, {
-          offerCandidates: arrayUnion(event.candidate.toJSON()),
-        });
       }
     };
-
-    // Create an offer to connect to the remote peer
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    await setDoc(callDocRef, { offer });
-
-    const unsub = onSnapshot(callDocRef, {
-      next: (doc) => {
-        const { peerConnection: currentPeerConnection, remoteIceCandidates } =
-          get();
-        const updatedCall = doc.data() as CallDb;
-        if (!currentPeerConnection.remoteDescription && updatedCall.answer) {
-          currentPeerConnection.setRemoteDescription(updatedCall.answer);
-        }
-        if (updatedCall.answerCandidates) {
-          updatedCall.answerCandidates.forEach((c) => {
-            if (!remoteIceCandidates.has(c.candidate)) {
-              currentPeerConnection.addIceCandidate(c);
-              set((state) => ({
-                remoteIceCandidates: new Set([
-                  ...state.remoteIceCandidates,
-                  c.candidate,
-                ]),
-              }));
-            }
-          });
-        }
-      },
-    });
+    const unsub = subscribeToCallUpdates(passphrase, handleCallUpdates);
     set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
   },
-  isAudioEnabled: true,
+  isAudioEnabled: false,
   switchAudio: async () => {
     const { userStream, isAudioEnabled } = get();
     userStream?.getAudioTracks().forEach((track) => {
@@ -313,7 +293,7 @@ export const useCallStore = create<Call>((set, get) => ({
       canSwitchCameraPerspective,
     } = get();
     if (!canSwitchCameraPerspective) {
-      toast("You don't have a rear facing camera to switch to");
+      toasts.noRearCamera();
       return;
     }
     const newCameraPerspective =
@@ -332,7 +312,7 @@ export const useCallStore = create<Call>((set, get) => ({
         !newTrackSettings.facingMode ||
         newTrackSettings.facingMode === "user"
       ) {
-        toast("You don't have a rear facing camera to switch to");
+        toasts.noRearCamera();
         set(() => ({ canSwitchCameraPerspective: false }));
         return;
       }
@@ -360,14 +340,13 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   endCall: async () => {
-    sounds.callEnded();
+    sounds.callEndedSound.play();
     const { peerConnection, subscriptions, passphrase, messageChannel } = get();
     set(() => ({ solo: true, remoteStream: null }));
     messageChannel?.close();
     peerConnection?.close();
     subscriptions.forEach((unsub) => unsub());
-    const callRef = doc(firestore, "calls", passphrase);
-    await updateDoc(callRef, { left: true });
+    updateCallLeft(passphrase, true);
 
     set(() => ({
       ongoing: false,
@@ -454,7 +433,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
     if (!showMessages) {
       set(() => ({ newMessage: true }));
-      sounds.newMessage();
+      sounds.newMessageSound.play();
     }
   },
   sendMessage: (content: string) => {

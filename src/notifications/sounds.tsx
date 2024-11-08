@@ -1,16 +1,8 @@
-import { Howl } from "howler";
-const newMessageSound = new Howl({ src: "new_message.mp3" });
-const callStartedSound = new Howl({ src: "call_started.wav" });
-const callEndedSound = new Howl({ src: "call_ended.wav" });
+const newMessageSound = new Audio("/new_message.mp3");
+newMessageSound.load();
+const callStartedSound = new Audio("/call_started.wav");
+callStartedSound.load();
+const callEndedSound = new Audio("/call_ended.wav");
+callEndedSound.load();
 
-export const sounds = {
-  newMessage: () => {
-    newMessageSound.play();
-  },
-  callStarted: () => {
-    callStartedSound.play();
-  },
-  callEnded: () => {
-    callEndedSound.play();
-  },
-};
+export const sounds = { newMessageSound, callEndedSound, callStartedSound };
