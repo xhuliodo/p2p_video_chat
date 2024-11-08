@@ -1,8 +1,13 @@
-// const newMessageSound = new Audio("/new_message.mp3");
-// newMessageSound.load();
-// const callStartedSound = new Audio("/call_started.wav");
-// callStartedSound.load();
-// const callEndedSound = new Audio("/call_ended.wav");
-// callEndedSound.load();
+import { Howl } from "howler";
 
-// export const sounds = { newMessageSound, callEndedSound, callStartedSound };
+export const sounds = {
+  newMessageSound: new Howl({
+    src: "/new_message.mp3",
+  }),
+  callStartedSound: new Howl({
+    src: "/call_started.wav",
+  }),
+  callEndedSound: new Howl({
+    src: "/call_ended.wav",
+  }),
+};

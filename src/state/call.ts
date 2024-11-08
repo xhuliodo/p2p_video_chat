@@ -15,6 +15,7 @@ import {
   updateCallOffer,
   updateCallOfferIceCandidates,
 } from "../firebase/firebase";
+import { sounds } from "../notifications/sounds";
 
 interface Message {
   content: string;
@@ -133,7 +134,7 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle incoming tracks from remote peers
     peerConnection.ontrack = (event) => {
       if (event.streams.length) {
-        // sounds.callStartedSound.play();
+        sounds.callStartedSound.play();
       }
       event.streams.forEach((s) =>
         set(() => ({ solo: false, remoteStream: s })),
@@ -340,13 +341,13 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   endCall: async () => {
-    // sounds.callEndedSound.play();
+    sounds.callEndedSound.play();
     const { peerConnection, subscriptions, passphrase, messageChannel } = get();
-    set(() => ({ solo: true, remoteStream: null }));
+    set(() => ({ solo: true, remoteStream: null, messages: [] }));
+    updateCallLeft(passphrase, true);
     messageChannel?.close();
     peerConnection?.close();
     subscriptions.forEach((unsub) => unsub());
-    updateCallLeft(passphrase, true);
 
     set(() => ({
       ongoing: false,
@@ -433,7 +434,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
     if (!showMessages) {
       set(() => ({ newMessage: true }));
-      // sounds.newMessageSound.play();
+      sounds.newMessageSound.play();
     }
   },
   sendMessage: (content: string) => {
