@@ -2,9 +2,8 @@
 import { initializeApp } from "firebase/app";
 import {
   arrayUnion,
-  deleteDoc,
+  collection,
   doc,
-  getDoc,
   getFirestore,
   onSnapshot,
   setDoc,
@@ -25,85 +24,186 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-export interface CallDb {
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Participant {}
+
+export interface Connection {
   offer: RTCSessionDescriptionInit;
-  offerCandidates?: RTCIceCandidate[];
   answer?: RTCSessionDescriptionInit;
-  answerCandidates?: RTCIceCandidate[];
-  left?: boolean;
+  done?: boolean;
 }
 
-export const deleteCallByPassphrase = (passphrase: string): Promise<void> => {
+export interface CallDb {
+  participants: Record<string, Connection>;
+  connections: Record<string, Connection>;
+  offerCandidates: Record<string, RTCIceCandidate>;
+  answerCandidates?: Record<string, RTCIceCandidate>;
+}
+
+export const createCallByPassphrase = (passphrase: string): Promise<void> => {
   const callDocRef = doc(firestore, "calls", passphrase);
-  return deleteDoc(callDocRef);
+  return setDoc(callDocRef, {});
 };
 
-export const getCallByPassphrase = async (
+export const addParticipant = (
   passphrase: string,
-): Promise<CallDb | null> => {
-  const callDocRef = doc(firestore, "calls", passphrase);
-  const callDocSnap = await getDoc(callDocRef);
-  if (!callDocSnap.exists()) {
-    return null;
-  }
-
-  const foundCall = callDocSnap.data() as CallDb;
-  return foundCall;
+  userId: string,
+): Promise<void> => {
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    "participants",
+    userId,
+  );
+  return setDoc(callDocRef, {});
 };
 
-export const updateCallOfferIceCandidates = async (
+export const updateCallIceCandidates = async (
   passphrase: string,
+  connectionKey: string,
+  offer: boolean,
   iceCandidate: RTCIceCandidate,
 ): Promise<void> => {
-  const callDocRef = doc(firestore, "calls", passphrase);
-  return updateDoc(callDocRef, {
-    offerCandidates: arrayUnion(iceCandidate.toJSON()),
-  });
-};
+  const candidatesCollection = offer ? "offerCandidates" : "answerCandidates";
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    candidatesCollection,
+    connectionKey,
+  );
 
-export const updateCallAnswerIceCandidates = async (
-  passphrase: string,
-  iceCandidate: RTCIceCandidate,
-): Promise<void> => {
-  const callDocRef = doc(firestore, "calls", passphrase);
-  return updateDoc(callDocRef, {
-    answerCandidates: arrayUnion(iceCandidate.toJSON()),
-  });
+  // Using arrayUnion to accumulate ICE candidates in an array
+  return setDoc(
+    callDocRef,
+    {
+      candidates: arrayUnion(iceCandidate.toJSON()),
+    },
+    { merge: true },
+  );
 };
 
 export const updateCallOffer = async (
   passphrase: string,
+  connectionKey: string,
   offer: RTCSessionDescriptionInit,
 ): Promise<void> => {
-  const callDocRef = doc(firestore, "calls", passphrase);
-  return await setDoc(callDocRef, { offer });
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    "connections",
+    connectionKey,
+  );
+  return setDoc(callDocRef, { offer });
 };
 
 export const updateCallAnswer = async (
   passphrase: string,
+  connectionKey: string,
   answer: RTCSessionDescriptionInit,
 ): Promise<void> => {
-  const callDocRef = doc(firestore, "calls", passphrase);
-  return await setDoc(callDocRef, { answer });
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    "connections",
+    connectionKey,
+  );
+  return updateDoc(callDocRef, { answer });
 };
 
-export const updateCallLeft = async (
+export const updateCallConnectionStatus = async (
   passphrase: string,
-  left: boolean,
-): Promise<void> => {
-  const callDocRef = doc(firestore, "calls", passphrase);
-  return await setDoc(callDocRef, { left });
-};
-
-export const subscribeToCallUpdates = (
-  passphrase: string,
-  callbackFunc: (updatedCall: CallDb) => void,
+  connectionKey: string,
 ) => {
-  const callDocRef = doc(firestore, "calls", passphrase);
-  return onSnapshot(callDocRef, {
-    next: (doc) => {
-      const updatedCall = doc.data() as CallDb;
-      callbackFunc(updatedCall);
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    "connections",
+    connectionKey,
+  );
+  return updateDoc(callDocRef, { done: true });
+};
+
+export const subscribeToParticipantsUpdates = (
+  passphrase: string,
+  callbackFunc: (participants: Record<string, Participant>) => void,
+) => {
+  const participantsCollectionRef = collection(
+    firestore,
+    "calls",
+    passphrase,
+    "participants",
+  );
+
+  return onSnapshot(participantsCollectionRef, {
+    next: (snapshot) => {
+      const participants: Record<string, Participant> = {};
+      snapshot.forEach((doc) => {
+        participants[doc.id] = doc.data() as Participant;
+      });
+      callbackFunc(participants);
     },
   });
 };
+
+export const subscribeToConnectionUpdates = (
+  passphrase: string,
+  callbackFunc: (connections: Record<string, Connection>) => void,
+) => {
+  const callDocRef = collection(firestore, "calls", passphrase, "connections");
+  return onSnapshot(callDocRef, {
+    next: (snapshot) => {
+      const connections: Record<string, Connection> = {};
+      snapshot.forEach((doc) => {
+        connections[doc.id] = doc.data() as Connection;
+      });
+      callbackFunc(connections);
+    },
+  });
+};
+
+export const subscribeToIceCandidatesUpdates = (
+  passphrase: string,
+  connectionKey: string,
+  offer: boolean,
+  callbackFunc: (iceCandidate: RTCIceCandidate) => void,
+) => {
+  const candidatesCollection = offer ? "offerCandidates" : "answerCandidates";
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    candidatesCollection,
+    connectionKey,
+  );
+
+  const processedCandidates = new Set<string>(); // Track processed candidates
+
+  return onSnapshot(callDocRef, {
+    next: (doc) => {
+      const data = doc.data();
+      if (data?.candidates) {
+        (data.candidates as RTCIceCandidateInit[]).forEach((candidateData) => {
+          const candidateKey = JSON.stringify(candidateData);
+          if (!processedCandidates.has(candidateKey)) {
+            processedCandidates.add(candidateKey); // Mark as processed
+            const iceCandidate = new RTCIceCandidate(candidateData);
+            callbackFunc(iceCandidate); // Trigger callback with new candidate
+          }
+        });
+      }
+    },
+  });
+};
+
+// export const updateCallLeft = async (
+//   passphrase: string,
+//   left: boolean,
+// ): Promise<void> => {
+//   const callDocRef = doc(firestore, "calls", passphrase);
+//   return await setDoc(callDocRef, { left });
+// };

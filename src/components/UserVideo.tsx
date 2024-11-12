@@ -7,17 +7,28 @@ import { Resizable } from "re-resizable";
 import { Direction } from "re-resizable/lib/resizer";
 import { useWindowDimensions } from "../hooks/useWindowDimensions";
 import { Icon } from "@iconify/react";
+import { useShallow } from "zustand/shallow";
 
-interface UserVideoProps {
-  solo: boolean;
-}
-const UserVideo: React.FC<UserVideoProps> = ({ solo }) => {
-  const userStream = useCallStore((state) => state.userStream);
-  const isAudioEnabled = useCallStore((state) => state.isAudioEnabled);
-  const switchAudio = useCallStore((state) => state.switchAudio);
-  const isCameraEnabled = useCallStore((state) => state.isCameraEnabled);
-  const switchCamera = useCallStore((state) => state.switchCamera);
-  const shouldFlip = useCallStore((state) => state.shouldFlip);
+const UserVideo: React.FC = () => {
+  const {
+    solo,
+    isAudioEnabled,
+    isCameraEnabled,
+    shouldFlip,
+    switchAudio,
+    switchCamera,
+    userStream,
+  } = useCallStore(
+    useShallow((state) => ({
+      solo: state.solo,
+      userStream: state.userStream,
+      isAudioEnabled: state.isAudioEnabled,
+      switchAudio: state.switchAudio,
+      isCameraEnabled: state.isCameraEnabled,
+      switchCamera: state.switchCamera,
+      shouldFlip: state.shouldFlip,
+    })),
+  );
 
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
@@ -157,7 +168,13 @@ export const DraggableAndResizableUserVideo = () => {
         height: windowDimensions.height,
       });
     }
-  }, [size.height, size.width, solo, windowDimensions.height, windowDimensions.width]);
+  }, [
+    size.height,
+    size.width,
+    solo,
+    windowDimensions.height,
+    windowDimensions.width,
+  ]);
   const handleOnDragStart: DraggableEventHandler = () => {
     setIsDragging(true);
   };
@@ -251,7 +268,7 @@ export const DraggableAndResizableUserVideo = () => {
             topRight: `z-20 !h-fit !w-fit !-right-[15px] !-top-[15px]`,
           }}
         >
-          <UserVideo solo={solo} />
+          <UserVideo />
         </Resizable>
       </div>
     </Draggable>

@@ -4,19 +4,21 @@ import { useCallStore } from "../state/call";
 import { Icon } from "@iconify/react";
 import { useAutoCollapse } from "../hooks/useAutoCollapse";
 import { toasts } from "../notifications/toasts";
+import { useShallow } from "zustand/shallow";
 
 export const CallButtons: FC = () => {
-  const solo = useCallStore((state) => state.solo);
-  const endCall = useCallStore((state) => state.endCall);
-  const switchCameraPerspective = useCallStore(
-    (state) => state.switchCameraPerspective,
-  );
-  const canSwitchCameraPerspective = useCallStore(
-    (state) => state.canSwitchCameraPerspective,
-  );
-  const toggleMessages = useCallStore((state) => state.toggleMessages);
-  const canSendMessage = useCallStore((state) => state.canSendMessage);
-  const newMessage = useCallStore((state) => state.newMessage);
+  const { solo, switchCameraPerspective, canSwitchCameraPerspective } =
+    useCallStore(
+      useShallow((state) => ({
+        solo: state.solo,
+        switchCameraPerspective: state.switchCameraPerspective,
+        canSwitchCameraPerspective: state.canSwitchCameraPerspective,
+      })),
+    );
+  // const endCall = useCallStore((state) => state.endCall);
+  // const toggleMessages = useCallStore((state) => state.toggleMessages);
+  // const canSendMessage = useCallStore((state) => state.canSendMessage);
+  // const newMessage = useCallStore((state) => state.newMessage);
 
   const onClickShare = () => {
     const shareData = {
@@ -40,7 +42,7 @@ export const CallButtons: FC = () => {
   const onClickLeave = async () => {
     console.log("leaving call");
     try {
-      await endCall(); // Wait for endCall to complete
+      // await endCall(); // Wait for endCall to complete
     } catch (e) {
       console.log("while leaving call caught error:", e);
     }
@@ -99,13 +101,13 @@ export const CallButtons: FC = () => {
           <button
             name="Message"
             className="flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-[#008B8B] p-3 text-white active:bg-[#008B8B]/80 disabled:bg-gray-300"
-            onClick={toggleMessages}
-            disabled={!canSendMessage}
+            // onClick={toggleMessages}
+            // disabled={!canSendMessage}
           >
             <Icon icon="mdi:message" className="h-full w-full" />
-            {newMessage && (
+            {/* {newMessage && (
               <div className="fixed right-0 top-0 h-3 w-3 rounded-full border border-white bg-[#008B8B]"></div>
-            )}
+            )} */}
           </button>
         </div>
         <div
@@ -127,9 +129,9 @@ export const CallButtons: FC = () => {
               icon="material-symbols:more-horiz"
               className="h-full w-full"
             />
-            {newMessage && (
+            {/* {newMessage && (
               <div className="fixed right-0 top-0 h-3 w-3 rounded-full border border-white bg-[#008B8B]"></div>
-            )}
+            )} */}
           </button>
         </div>
         <button
