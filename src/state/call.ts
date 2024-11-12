@@ -482,49 +482,21 @@ const getUserStream = (
 };
 
 async function newPeerConnection(): Promise<RTCPeerConnection> {
-  let iceServers = [];
-
-  try {
-    // Attempt to fetch TURN credentials from primary service
-    const response = await fetch(
-      "https://xd-p2p-video-chat.metered.live/api/v1/turn/credentials?apiKey=cd45057e409fef9a935947fcbb9a58fd736b",
-    );
-
-    // Check if the response is successful and parse as JSON
-    if (response.ok) {
-      iceServers = await response.json();
-    } else {
-      throw new Error("Failed to fetch TURN credentials from primary service");
-    }
-  } catch (error) {
-    console.warn("Using fallback ICE servers due to:", error);
-
-    // Fallback to public STUN and TURN servers
-    iceServers = [
-      // Public STUN servers
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "stun:stun2.l.google.com:19302" },
-
-      // Public TURN servers
-      {
-        urls: "turn:relay.metered.ca:80",
-        username: "public-user",
-        credential: "public-pass",
-      },
-      {
-        urls: "turn:relay.metered.ca:443",
-        username: "public-user",
-        credential: "public-pass",
-      },
-      {
-        urls: "turn:relay.metered.ca:443?transport=tcp",
-        username: "public-user",
-        credential: "public-pass",
-      },
-    ];
-  }
-
+  const iceServers = [
+    // STUN server
+    { urls: "stun:turn.xhuliodo.xyz:3478" },
+    // TURN server
+    {
+      urls: "turn:turn.xhuliodo.xyz:3478",
+      username: "Thud3578",
+      credential: "bbbX7qQuBSX7kUd5AWtLmouCW",
+    },
+    {
+      urls: "turn:turn.xhuliodo.xyz:5349",
+      username: "Thud3578",
+      credential: "bbbX7qQuBSX7kUd5AWtLmouCW",
+    },
+  ];
   return new RTCPeerConnection({
     iceServers,
   });
