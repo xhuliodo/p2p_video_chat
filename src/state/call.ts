@@ -587,6 +587,12 @@ const getUserStream = async (
       }
     }
   }
+
+  if (defaultAudioDevice) {
+    alert(JSON.stringify(defaultAudioDevice.toJSON, null, 2));
+  } else {
+    alert(JSON.stringify(devices, null, 2));
+  }
   return navigator.mediaDevices.getUserMedia({
     audio: audio
       ? {
