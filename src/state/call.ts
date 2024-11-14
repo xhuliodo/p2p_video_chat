@@ -573,6 +573,15 @@ const getUserStream = async (
   video: boolean,
   perspective: "environment" | "user",
 ) => {
+  const audioDevices = (await navigator.mediaDevices.enumerateDevices()).filter(
+    (d) => d.kind === "audioinput",
+  );
+  if (audioDevices.length > 1) {
+    alert(
+      "found headphones and selected them: \n" +
+        JSON.stringify(audioDevices[1], null, 2),
+    );
+  }
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: audio
       ? {
@@ -589,11 +598,6 @@ const getUserStream = async (
         }
       : video,
   });
-
-  const audioDevices = (await navigator.mediaDevices.enumerateDevices()).filter(
-    (d) => d.kind === "audioinput",
-  );
-  alert(JSON.stringify(audioDevices, null, 2));
 
   return stream;
 };
