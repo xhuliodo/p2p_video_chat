@@ -158,6 +158,27 @@ export const useCallStore = create<Call>((set, get) => ({
     }
     set(() => ({ userStream: stream, passphrase }));
 
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    let defaultAudioDevice: MediaDeviceInfo | null = null;
+    for (const d of devices) {
+      if (d.kind === "audioinput") {
+        if (d.deviceId.toLocaleLowerCase().includes("default")) {
+          defaultAudioDevice = d;
+          break;
+        }
+        if (d.label.toLocaleLowerCase().includes("default")) {
+          defaultAudioDevice = d;
+          break;
+        }
+      }
+    }
+
+    if (defaultAudioDevice) {
+      alert(JSON.stringify(defaultAudioDevice.toJSON, null, 2));
+    } else {
+      alert(JSON.stringify(devices, null, 2));
+    }
+
     const foundCall = await getCallByPassphrase(passphrase);
     if (!foundCall) {
       await createCall(passphrase);
@@ -573,32 +594,12 @@ const getUserStream = async (
   video: boolean,
   perspective: "environment" | "user",
 ) => {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  let defaultAudioDevice: MediaDeviceInfo | null = null;
-  for (const d of devices) {
-    if (d.kind === "audioinput") {
-      if (d.deviceId.toLocaleLowerCase().includes("default")) {
-        defaultAudioDevice = d;
-        break;
-      }
-      if (d.label.toLocaleLowerCase().includes("default")) {
-        defaultAudioDevice = d;
-        break;
-      }
-    }
-  }
-
-  if (defaultAudioDevice) {
-    alert(JSON.stringify(defaultAudioDevice.toJSON, null, 2));
-  } else {
-    alert(JSON.stringify(devices, null, 2));
-  }
   return navigator.mediaDevices.getUserMedia({
     audio: audio
       ? {
-          ...(defaultAudioDevice
-            ? { deviceId: defaultAudioDevice.deviceId }
-            : {}),
+          // ...(defaultAudioDevice
+          //   ? { deviceId: defaultAudioDevice.deviceId }
+          //   : {}),
           noiseSuppression: true,
           autoGainControl: true,
           echoCancellation: true,
