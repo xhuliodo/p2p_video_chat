@@ -40,12 +40,16 @@ const UserVideo: React.FC = () => {
 
       // Wait for metadata to load before playing
       const playVideo = () => {
-        userVideo.play().catch((error) => console.error("Play error:", error));
+        userVideo
+          .play()
+          .catch((error) =>
+            console.error("Failed to play user video with error:", error),
+          );
       };
       // Listen for loadedmetadata event, then play video
       userVideo.addEventListener("loadedmetadata", playVideo);
 
-      // Clean up by stopping tracks and removing the event listener
+      // Clean up by pausing the video and removing the event listener
       return () => {
         userVideo.pause();
         userVideo.removeEventListener("loadedmetadata", playVideo);

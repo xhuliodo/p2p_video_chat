@@ -6,6 +6,11 @@ import { toasts } from "../notifications/toasts";
 import {
   addParticipant,
   Connection,
+  createCall,
+  deleteCallByPassphrase,
+  deleteCallConnection,
+  deleteParticipant,
+  getCallByPassphrase,
   Participant,
   subscribeToConnectionUpdates,
   subscribeToIceCandidatesUpdates,
@@ -14,6 +19,7 @@ import {
   updateCallConnectionStatus,
   updateCallIceCandidates,
   updateCallOffer,
+  updateParticipantDisconnections,
 } from "../firebase/firebase";
 import { sounds } from "../notifications/sounds";
 import { toast } from "react-toastify";
@@ -21,15 +27,30 @@ import { produce } from "immer";
 
 type CameraPerspective = "environment" | "user";
 
+interface PeerConnection {
+  peerConnection: RTCPeerConnection;
+  subscription: () => void;
+}
+
 interface Call {
   userId: string;
   solo: boolean;
   passphrase: string;
   isCreator: boolean;
-  test: () => Promise<void>;
+  userStream: MediaStream | null;
+  remoteStreams: Record<string, MediaStream>;
+  addRemoteStream: (key: string, stream: MediaStream) => void;
+  deleteRemoteStream: (key: string) => void;
+  peerConnections: Record<string, PeerConnection>;
+  addPeerConnection: (
+    key: string,
+    peerConnection: RTCPeerConnection,
+    subscriptions: () => void,
+  ) => void;
+  deletePeerConnection: (key: string) => void;
   startCall: (passphrase: string) => Promise<void>;
   handleOffer: (passphrase: string, connectionKey: string) => Promise<void>;
-  waitForConnectionOrTimeout: (
+  waitForIceCandidatesOrTimeout: (
     connectionKey: string,
     timeout: number,
   ) => Promise<string>;
@@ -42,6 +63,9 @@ interface Call {
     connectionKey: string,
     answer: RTCSessionDescriptionInit,
   ) => void;
+  handleReconnection: (connectionKey: string) => Promise<void>;
+  subscriptions: (() => void)[];
+  endCall: () => Promise<void>;
   isAudioEnabled: boolean;
   switchAudio: () => void;
   isCameraEnabled: boolean;
@@ -50,16 +74,10 @@ interface Call {
   shouldFlip: boolean;
   canSwitchCameraPerspective: boolean;
   switchCameraPerspective: () => Promise<void>;
-  userStream: MediaStream | null;
-  remoteStreams: Record<string, MediaStream>;
-  addRemoteStream: (key: string, stream: MediaStream) => void;
-  peerConnections: Record<string, RTCPeerConnection>;
-  addPeerConnection: (key: string, peerConnection: RTCPeerConnection) => void;
-  subscriptions: (() => void)[];
 }
 
 export const useCallStore = create<Call>((set, get) => ({
-  userId: localStorage.getItem("userId") || v7(),
+  userId: v7(),
   solo: true,
   passphrase: "",
   isCreator: false,
@@ -69,26 +87,50 @@ export const useCallStore = create<Call>((set, get) => ({
     set((state) =>
       produce(state, (draft) => {
         draft.remoteStreams[key] = stream;
+        if (draft.solo) {
+          draft.solo = false;
+        }
         return draft;
       }),
     );
   },
-  addPeerConnection: (key: string, peerConnection: RTCPeerConnection) => {
+  deleteRemoteStream: (key: string) => {
     set((state) =>
       produce(state, (draft) => {
-        draft.peerConnections[key] = peerConnection;
+        draft.remoteStreams[key].getTracks().forEach((t) => t.stop());
+        delete draft.remoteStreams[key];
+        if (Object.keys(draft.remoteStreams).length === 0) {
+          draft.solo = true;
+        }
         return draft;
       }),
     );
   },
   peerConnections: {},
-  test: async () => {
-    const stream = await getUserStream(false, true, "user");
-    set(() => ({ solo: false }));
-
-    for (let i = 0; i < 6; i++) {
-      set((s) => ({ remoteStreams: { ...s.remoteStreams, [i]: stream } }));
-    }
+  addPeerConnection: (
+    key: string,
+    peerConnection: RTCPeerConnection,
+    subscription: () => void,
+  ) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.peerConnections[key] = {
+          peerConnection,
+          subscription,
+        };
+        return draft;
+      }),
+    );
+  },
+  deletePeerConnection: (key: string) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.peerConnections[key].peerConnection.close();
+        draft.peerConnections[key].subscription();
+        delete draft.peerConnections[key];
+        return draft;
+      }),
+    );
   },
   startCall: async (passphrase) => {
     const {
@@ -96,12 +138,11 @@ export const useCallStore = create<Call>((set, get) => ({
       isCameraEnabled,
       cameraPerspective,
       userId,
-      waitForConnectionOrTimeout,
+      waitForIceCandidatesOrTimeout,
       handleAnswer,
       handleOffer,
       handleAnswerResponse,
     } = get();
-    localStorage.setItem("userId", userId);
     let stream;
     try {
       stream = await getUserStream(
@@ -115,7 +156,22 @@ export const useCallStore = create<Call>((set, get) => ({
       });
       return;
     }
-    set(() => ({ userStream: stream }));
+    set(() => ({ userStream: stream, passphrase }));
+
+    const foundCall = await getCallByPassphrase(passphrase);
+    if (!foundCall) {
+      await createCall(passphrase);
+    }
+
+    if (
+      foundCall?.participants &&
+      Object.keys(foundCall.participants).length > 5
+    ) {
+      router.navigate("/", {
+        state: { message: "Room is full!" },
+      });
+      return;
+    }
 
     // add event listener for when a new participant gets on call and see if you are
     // the one supposed to make an offer
@@ -140,7 +196,7 @@ export const useCallStore = create<Call>((set, get) => ({
         if (isOfferer) {
           console.log("you are making them an offer");
           await handleOffer(passphrase, connectionKey);
-          const res = await waitForConnectionOrTimeout(connectionKey, 10000);
+          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
           console.log(res);
           continue;
         }
@@ -187,14 +243,17 @@ export const useCallStore = create<Call>((set, get) => ({
             console.log("no answer for the offer yet");
             continue;
           }
-          if (peerConnections[connectionKey].remoteDescription) {
+          if (
+            peerConnections[connectionKey] &&
+            peerConnections[connectionKey].peerConnection.remoteDescription
+          ) {
             console.log("already handled this response");
             continue;
           }
 
           console.log("got an answer to the offer made");
           handleAnswerResponse(connectionKey, currentConnection.answer);
-          const res = await waitForConnectionOrTimeout(connectionKey, 10000);
+          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
           console.log(res);
           await updateCallConnectionStatus(passphrase, connectionKey);
 
@@ -212,7 +271,7 @@ export const useCallStore = create<Call>((set, get) => ({
             connectionKey,
             currentConnection.offer,
           );
-          const res = await waitForConnectionOrTimeout(connectionKey, 10000);
+          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
           console.log(res);
         }
       }
@@ -227,7 +286,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   handleOffer: async (passphrase: string, connectionKey: string) => {
-    const { userStream } = get();
+    const { userStream, handleReconnection } = get();
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
     userStream?.getTracks().forEach((track) => {
@@ -236,19 +295,18 @@ export const useCallStore = create<Call>((set, get) => ({
 
     // Handle incoming tracks from remote peers
     newPeerConnection.ontrack = (event) => {
-      const { solo, addRemoteStream } = get();
+      const { addRemoteStream } = get();
       if (event.streams.length) {
         sounds.callStartedSound.play();
-        if (solo) {
-          set(() => ({ solo: false }));
-        }
-        addRemoteStream(connectionKey, event.streams[0]);
+        event.streams.map((s) => addRemoteStream(connectionKey, s));
       }
     };
     newPeerConnection.oniceconnectionstatechange = async () => {
-      // TODO: handle disconnections
       const state = newPeerConnection.iceConnectionState;
       toast(state);
+      if (state === "failed" || state === "disconnected") {
+        handleReconnection(connectionKey);
+      }
     };
 
     // Create an offer to connect to the remote peer
@@ -259,7 +317,6 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle ICE candidates
     newPeerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        console.log("offer adding candidate", event.candidate.toJSON());
         updateCallIceCandidates(
           passphrase,
           connectionKey,
@@ -270,10 +327,7 @@ export const useCallStore = create<Call>((set, get) => ({
     };
 
     const handleIceCandidatesUpdates = (iceCandidate: RTCIceCandidate) => {
-      if (iceCandidate) {
-        console.log("offer receiving candidate", iceCandidate.toJSON());
-        newPeerConnection.addIceCandidate(iceCandidate);
-      }
+      if (iceCandidate) newPeerConnection.addIceCandidate(iceCandidate);
     };
     const iceCandidatesSub = subscribeToIceCandidatesUpdates(
       passphrase,
@@ -283,12 +337,9 @@ export const useCallStore = create<Call>((set, get) => ({
     );
 
     const { addPeerConnection } = get();
-    addPeerConnection(connectionKey, newPeerConnection);
-    set((state) => ({
-      subscriptions: [...state.subscriptions, iceCandidatesSub],
-    }));
+    addPeerConnection(connectionKey, newPeerConnection, iceCandidatesSub);
   },
-  waitForConnectionOrTimeout: (connectionKey: string, timeout: number) => {
+  waitForIceCandidatesOrTimeout: (connectionKey: string, timeout: number) => {
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
         resolve("Timeout reached");
@@ -296,10 +347,12 @@ export const useCallStore = create<Call>((set, get) => ({
 
       const checkCondition = () => {
         const { peerConnections } = get();
-        const currentPeerConnection = peerConnections[connectionKey];
-        if (currentPeerConnection.connectionState === "connected") {
+        if (
+          peerConnections[connectionKey].peerConnection.iceGatheringState ===
+          "complete"
+        ) {
           clearTimeout(timeoutId);
-          resolve("Connection Stable");
+          resolve("Ice candidates gathered");
         } else {
           // Continue checking every 100ms until the condition is met
           setTimeout(checkCondition, 100);
@@ -315,7 +368,7 @@ export const useCallStore = create<Call>((set, get) => ({
     connectionKey: string,
     offer: RTCSessionDescriptionInit,
   ) => {
-    const { userStream } = get();
+    const { userStream, handleReconnection } = get();
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
     userStream?.getTracks().forEach((track) => {
@@ -324,20 +377,24 @@ export const useCallStore = create<Call>((set, get) => ({
 
     // Handle incoming tracks from remote peers
     newPeerConnection.ontrack = (event) => {
-      const { solo, addRemoteStream } = get();
+      const { addRemoteStream } = get();
       if (event.streams.length) {
         sounds.callStartedSound.play();
-        if (solo) {
-          set(() => ({ solo: false }));
-        }
-        addRemoteStream(connectionKey, event.streams[0]);
+        event.streams.map((s) => addRemoteStream(connectionKey, s));
       }
     };
 
     newPeerConnection.oniceconnectionstatechange = async () => {
-      // TODO: handle disconnections
       const state = newPeerConnection.iceConnectionState;
       toast(state);
+      if (
+        state === "failed" ||
+        state === "disconnected" ||
+        state === "closed" ||
+        state === "completed"
+      ) {
+        handleReconnection(connectionKey);
+      }
     };
 
     await newPeerConnection.setRemoteDescription(offer);
@@ -372,17 +429,65 @@ export const useCallStore = create<Call>((set, get) => ({
     );
 
     const { addPeerConnection } = get();
-    addPeerConnection(connectionKey, newPeerConnection);
-    set((state) => ({
-      subscriptions: [...state.subscriptions, iceCandidatesSub],
-    }));
+    addPeerConnection(connectionKey, newPeerConnection, iceCandidatesSub);
   },
   handleAnswerResponse: (
     connectionKey: string,
     answer: RTCSessionDescriptionInit,
   ) => {
     const { peerConnections } = get();
-    peerConnections[connectionKey].setRemoteDescription(answer);
+    peerConnections[connectionKey].peerConnection.setRemoteDescription(answer);
+  },
+  handleReconnection: async (connectionKey: string) => {
+    const { deleteRemoteStream, deletePeerConnection, passphrase, userId } =
+      get();
+    deletePeerConnection(connectionKey);
+    deleteRemoteStream(connectionKey);
+    // reset answer
+    // since the answer in dependent on the connections, we just delete the connection
+    try {
+      await deleteCallConnection(passphrase, connectionKey);
+    } catch (e) {
+      console.log("could not delete call connection with err: ", e);
+    }
+    // reset offer
+    // since the offer is dependent on the participants, we just have to update the user with just an empty object
+    await updateParticipantDisconnections(passphrase, userId);
+  },
+  subscriptions: [],
+  endCall: async () => {
+    sounds.callEndedSound.play();
+
+    const {
+      remoteStreams,
+      deleteRemoteStream,
+      peerConnections,
+      deletePeerConnection,
+      passphrase,
+      userId,
+      subscriptions,
+    } = get();
+
+    subscriptions.forEach((s) => s());
+    await deleteParticipant(passphrase, userId);
+    Object.keys(remoteStreams).forEach((rsKey) => deleteRemoteStream(rsKey));
+    Object.keys(peerConnections).forEach((pcKey) =>
+      deletePeerConnection(pcKey),
+    );
+
+    console.log(passphrase);
+    const call = await getCallByPassphrase(passphrase);
+    console.log(call);
+    if (
+      call &&
+      call?.participants &&
+      Object.keys(call.participants).length === 0
+    ) {
+      console.log("delete call as last participant");
+      await deleteCallByPassphrase(passphrase);
+    }
+
+    set(() => ({ passphrase: v7() }));
   },
   isAudioEnabled: true,
   switchAudio: async () => {
@@ -449,7 +554,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const newVideoTrack = newUserStream.getVideoTracks()[0];
     userStream?.addTrack(newVideoTrack);
     for (const k of Object.keys(peerConnections)) {
-      const sender = peerConnections[k]
+      const sender = peerConnections[k].peerConnection
         .getSenders()
         .find((s) => s.track?.kind === "video");
       sender?.replaceTrack(newVideoTrack);
@@ -461,7 +566,6 @@ export const useCallStore = create<Call>((set, get) => ({
       shouldFlip: newCameraPerspective === "user",
     }));
   },
-  subscriptions: [],
 }));
 
 const getUserStream = (
@@ -473,8 +577,8 @@ const getUserStream = (
     audio,
     video: video
       ? {
-          width: { min: 1024, ideal: 1280, max: 1920 },
-          height: { min: 576, ideal: 720, max: 1080 },
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 360, ideal: 720, max: 1080 },
           facingMode: perspective,
         }
       : video,

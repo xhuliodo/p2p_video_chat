@@ -3,11 +3,14 @@ import { initializeApp } from "firebase/app";
 import {
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getFirestore,
   onSnapshot,
   setDoc,
   updateDoc,
+  increment,
+  getDoc,
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -24,8 +27,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Participant {}
+export interface Participant {
+  disconnections: number;
+}
 
 export interface Connection {
   offer: RTCSessionDescriptionInit;
@@ -33,16 +37,42 @@ export interface Connection {
   done?: boolean;
 }
 
-export interface CallDb {
+export interface Call {
   participants: Record<string, Connection>;
   connections: Record<string, Connection>;
   offerCandidates: Record<string, RTCIceCandidate>;
   answerCandidates?: Record<string, RTCIceCandidate>;
 }
 
-export const createCallByPassphrase = (passphrase: string): Promise<void> => {
+export const getCallByPassphrase = async (
+  passphrase: string,
+): Promise<Call | null> => {
+  const callDocRef = doc(firestore, "calls", passphrase);
+
+  const foundCall = await getDoc(callDocRef);
+  if (!foundCall.exists()) {
+    console.log("queried call does not exist");
+    return null;
+  }
+
+  try {
+    const call = foundCall.data() as Call;
+    return call;
+  } catch (e) {
+    console.log("failed to convert call with err: ", e);
+    return null;
+  }
+};
+
+export const createCall = async (passphrase: string) => {
   const callDocRef = doc(firestore, "calls", passphrase);
   return setDoc(callDocRef, {});
+};
+
+export const deleteCallByPassphrase = (passphrase: string) => {
+  const callDocRef = doc(firestore, "calls", passphrase);
+
+  return deleteDoc(callDocRef);
 };
 
 export const addParticipant = (
@@ -56,7 +86,35 @@ export const addParticipant = (
     "participants",
     userId,
   );
-  return setDoc(callDocRef, {});
+  return setDoc(callDocRef, { disconnections: 0 });
+};
+
+export const updateParticipantDisconnections = (
+  passphrase: string,
+  userId: string,
+): Promise<void> => {
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    "participants",
+    userId,
+  );
+  return setDoc(callDocRef, { disconnections: increment(1) });
+};
+
+export const deleteParticipant = (
+  passphrase: string,
+  userId: string,
+): Promise<void> => {
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    "participants",
+    userId,
+  );
+  return deleteDoc(callDocRef);
 };
 
 export const updateCallIceCandidates = async (
@@ -126,6 +184,20 @@ export const updateCallConnectionStatus = async (
     connectionKey,
   );
   return updateDoc(callDocRef, { done: true });
+};
+
+export const deleteCallConnection = async (
+  passphrase: string,
+  connectionKey: string,
+) => {
+  const callDocRef = doc(
+    firestore,
+    "calls",
+    passphrase,
+    "connections",
+    connectionKey,
+  );
+  return deleteDoc(callDocRef);
 };
 
 export const subscribeToParticipantsUpdates = (

@@ -7,15 +7,15 @@ import { toasts } from "../notifications/toasts";
 import { useShallow } from "zustand/shallow";
 
 export const CallButtons: FC = () => {
-  const { solo, switchCameraPerspective, canSwitchCameraPerspective } =
+  const { solo, switchCameraPerspective, canSwitchCameraPerspective, endCall } =
     useCallStore(
       useShallow((state) => ({
         solo: state.solo,
         switchCameraPerspective: state.switchCameraPerspective,
         canSwitchCameraPerspective: state.canSwitchCameraPerspective,
+        endCall: state.endCall,
       })),
     );
-  // const endCall = useCallStore((state) => state.endCall);
   // const toggleMessages = useCallStore((state) => state.toggleMessages);
   // const canSendMessage = useCallStore((state) => state.canSendMessage);
   // const newMessage = useCallStore((state) => state.newMessage);
@@ -42,7 +42,7 @@ export const CallButtons: FC = () => {
   const onClickLeave = async () => {
     console.log("leaving call");
     try {
-      // await endCall(); // Wait for endCall to complete
+      await endCall(); // Wait for endCall to complete
     } catch (e) {
       console.log("while leaving call caught error:", e);
     }

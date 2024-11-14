@@ -61,15 +61,27 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
     const remoteVideo = remoteVideoRef.current;
     if (remoteVideo) {
       remoteVideo.srcObject = remoteStream;
-      remoteVideo.play();
+
+      // Wait for metadata to load before playing
+      const playVideo = () => {
+        remoteVideo
+          .play()
+          .catch((error) =>
+            console.error("Failed to play remote video with error:", error),
+          );
+      };
+
+      // Listen for loadedmetadata event, then play video
+      remoteVideo.addEventListener("loadedmetadata", playVideo);
+
+      // Clean up by pausing the video and removing the event listener
+      return () => {
+        if (remoteVideo) {
+          remoteVideo.removeEventListener("loadedmetadata", playVideo);
+          remoteVideo.srcObject = null;
+        }
+      };
     }
-    return () => {
-      if (remoteVideo) {
-        const stream = remoteVideo.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => track.stop());
-        remoteVideo.srcObject = null;
-      }
-    };
   }, [remoteStream]);
   return (
     <video
