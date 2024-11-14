@@ -29,6 +29,10 @@ interface Call {
   test: () => Promise<void>;
   startCall: (passphrase: string) => Promise<void>;
   handleOffer: (passphrase: string, connectionKey: string) => Promise<void>;
+  waitForConnectionOrTimeout: (
+    connectionKey: string,
+    timeout: number,
+  ) => Promise<string>;
   handleAnswer: (
     passphrase: string,
     connectionKey: string,
@@ -87,8 +91,16 @@ export const useCallStore = create<Call>((set, get) => ({
     }
   },
   startCall: async (passphrase) => {
-    const { isAudioEnabled, isCameraEnabled, cameraPerspective, userId } =
-      get();
+    const {
+      isAudioEnabled,
+      isCameraEnabled,
+      cameraPerspective,
+      userId,
+      waitForConnectionOrTimeout,
+      handleAnswer,
+      handleOffer,
+      handleAnswerResponse,
+    } = get();
     localStorage.setItem("userId", userId);
     let stream;
     try {
@@ -110,7 +122,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const handleParticipantsUpdates = async (
       participants: Record<string, Participant>,
     ) => {
-      const { userId, peerConnections, handleOffer } = get();
+      const { userId, peerConnections } = get();
       for (const participantId of Object.keys(participants)) {
         // skip yoself
         if (participantId === userId) {
@@ -127,7 +139,9 @@ export const useCallStore = create<Call>((set, get) => ({
         const isOfferer = getIsOfferer(userId, participantId);
         if (isOfferer) {
           console.log("you are making them an offer");
-          handleOffer(passphrase, connectionKey);
+          await handleOffer(passphrase, connectionKey);
+          const res = await waitForConnectionOrTimeout(connectionKey, 10000);
+          console.log(res);
           continue;
         }
 
@@ -149,7 +163,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const handleConnectionUpdates = async (
       connections: Record<string, Connection>,
     ) => {
-      const { handleAnswer, userId, handleAnswerResponse } = get();
+      const { userId, peerConnections } = get();
       for (const connectionKey of Object.keys(connections)) {
         // skip connections you are not a part in
         if (!connectionKey.includes(userId)) {
@@ -167,24 +181,40 @@ export const useCallStore = create<Call>((set, get) => ({
         }
 
         const isOfferer = getIsOffererFromConnectionKey(userId, connectionKey);
-        // handle the response for the answer
+        // handle the update as the offerer
         if (isOfferer) {
-          if (currentConnection.answer) {
-            console.log("got an answer to the offer made");
-            handleAnswerResponse(connectionKey, currentConnection.answer);
-            await updateCallConnectionStatus(passphrase, connectionKey);
+          if (!currentConnection.answer) {
+            console.log("no answer for the offer yet");
+            continue;
           }
-          continue;
-        }
+          if (peerConnections[connectionKey].remoteDescription) {
+            console.log("already handled this response");
+            continue;
+          }
 
-        // handle the response for the offer
-        if (currentConnection.answer) {
-          console.log("already answered this offer!");
-          continue;
-        }
+          console.log("got an answer to the offer made");
+          handleAnswerResponse(connectionKey, currentConnection.answer);
+          const res = await waitForConnectionOrTimeout(connectionKey, 10000);
+          console.log(res);
+          await updateCallConnectionStatus(passphrase, connectionKey);
 
-        console.log("got a new offer");
-        handleAnswer(passphrase, connectionKey, currentConnection.offer);
+          continue;
+          // handle the update as the answerer
+        } else {
+          if (currentConnection.answer) {
+            console.log("already answered this offer");
+            continue;
+          }
+
+          console.log("got a new offer");
+          await handleAnswer(
+            passphrase,
+            connectionKey,
+            currentConnection.offer,
+          );
+          const res = await waitForConnectionOrTimeout(connectionKey, 10000);
+          console.log(res);
+        }
       }
     };
     const connectionSub = subscribeToConnectionUpdates(
@@ -222,7 +252,7 @@ export const useCallStore = create<Call>((set, get) => ({
     };
 
     // Create an offer to connect to the remote peer
-    const offer = await newPeerConnection.createOffer();
+    const offer = await newPeerConnection.createOffer({ iceRestart: false });
     await newPeerConnection.setLocalDescription(offer);
     await updateCallOffer(passphrase, connectionKey, offer);
 
@@ -257,6 +287,28 @@ export const useCallStore = create<Call>((set, get) => ({
     set((state) => ({
       subscriptions: [...state.subscriptions, iceCandidatesSub],
     }));
+  },
+  waitForConnectionOrTimeout: (connectionKey: string, timeout: number) => {
+    return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        resolve("Timeout reached");
+      }, timeout);
+
+      const checkCondition = () => {
+        const { peerConnections } = get();
+        const currentPeerConnection = peerConnections[connectionKey];
+        if (currentPeerConnection.connectionState === "connected") {
+          clearTimeout(timeoutId);
+          resolve("Connection Stable");
+        } else {
+          // Continue checking every 100ms until the condition is met
+          setTimeout(checkCondition, 100);
+        }
+      };
+
+      // Start checking the condition
+      checkCondition();
+    });
   },
   handleAnswer: async (
     passphrase: string,
@@ -330,11 +382,7 @@ export const useCallStore = create<Call>((set, get) => ({
     answer: RTCSessionDescriptionInit,
   ) => {
     const { peerConnections } = get();
-    const currentPeerConnection = peerConnections[connectionKey];
-    if (currentPeerConnection.signalingState === "stable") {
-      return;
-    }
-    currentPeerConnection.setRemoteDescription(answer);
+    peerConnections[connectionKey].setRemoteDescription(answer);
   },
   isAudioEnabled: true,
   switchAudio: async () => {
@@ -451,6 +499,7 @@ async function getPeerConnection(): Promise<RTCPeerConnection> {
   ];
   return new RTCPeerConnection({
     iceServers,
+    iceCandidatePoolSize: 5,
   });
 }
 
