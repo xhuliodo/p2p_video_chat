@@ -147,9 +147,11 @@ export const useCallStore = create<Call>((set, get) => ({
     try {
       stream = await getUserStream(
         isAudioEnabled,
+        "",
         isCameraEnabled,
         cameraPerspective,
       );
+      stream = await checkForBluetoothAudioDevices(stream);
     } catch {
       router.navigate("/", {
         state: { message: "Permissions of camera and audio are required!" },
@@ -475,7 +477,6 @@ export const useCallStore = create<Call>((set, get) => ({
       deletePeerConnection(pcKey),
     );
 
-    console.log(passphrase);
     const call = await getCallByPassphrase(passphrase);
     console.log(call);
     if (
@@ -526,6 +527,7 @@ export const useCallStore = create<Call>((set, get) => ({
 
     const newUserStream = await getUserStream(
       false,
+      "",
       true,
       newCameraPerspective,
     );
@@ -570,21 +572,14 @@ export const useCallStore = create<Call>((set, get) => ({
 
 const getUserStream = async (
   audio: boolean,
+  audioDeviceId: string,
   video: boolean,
   perspective: "environment" | "user",
 ) => {
-  const audioDevices = (await navigator.mediaDevices.enumerateDevices()).filter(
-    (d) => d.kind === "audioinput",
-  );
-  if (audioDevices.length > 1) {
-    alert(
-      "found headphones and selected them: \n" +
-        JSON.stringify(audioDevices[1], null, 2),
-    );
-  }
-  const stream = await navigator.mediaDevices.getUserMedia({
+  return navigator.mediaDevices.getUserMedia({
     audio: audio
       ? {
+          ...(audioDeviceId ? { deviceId: audioDeviceId } : {}),
           noiseSuppression: true,
           autoGainControl: true,
           echoCancellation: true,
@@ -598,6 +593,34 @@ const getUserStream = async (
         }
       : video,
   });
+};
+
+const checkForBluetoothAudioDevices = async (
+  stream: MediaStream,
+): Promise<MediaStream> => {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const audioDevices = devices
+    .filter((d) => d.kind === "audioinput")
+    .filter((d) => {
+      const label = d.label.toLowerCase();
+      return label.includes("airpods") || label.includes("bluetooth");
+    });
+  if (audioDevices.length) {
+    stream.getAudioTracks().forEach((t) => {
+      t.stop();
+      stream.removeTrack(t);
+    });
+
+    const bluetoothDeviceStream = await getUserStream(
+      true,
+      audioDevices[0].deviceId,
+      false,
+      "user",
+    );
+    bluetoothDeviceStream.getAudioTracks().forEach((t) => {
+      stream.addTrack(t);
+    });
+  }
 
   return stream;
 };
