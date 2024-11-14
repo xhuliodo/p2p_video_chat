@@ -568,13 +568,36 @@ export const useCallStore = create<Call>((set, get) => ({
   },
 }));
 
-const getUserStream = (
+const getUserStream = async (
   audio: boolean,
   video: boolean,
   perspective: "environment" | "user",
 ) => {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  let defaultAudioDevice: MediaDeviceInfo | null = null;
+  for (const d of devices) {
+    if (d.kind === "audioinput") {
+      if (d.deviceId.toLocaleLowerCase().includes("default")) {
+        defaultAudioDevice = d;
+        break;
+      }
+      if (d.label.toLocaleLowerCase().includes("default")) {
+        defaultAudioDevice = d;
+        break;
+      }
+    }
+  }
   return navigator.mediaDevices.getUserMedia({
-    audio,
+    audio: audio
+      ? {
+          ...(defaultAudioDevice
+            ? { deviceId: defaultAudioDevice.deviceId }
+            : {}),
+          noiseSuppression: true,
+          autoGainControl: true,
+          echoCancellation: true,
+        }
+      : audio,
     video: video
       ? {
           width: { min: 640, ideal: 1280, max: 1920 },
