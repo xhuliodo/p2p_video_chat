@@ -34,6 +34,7 @@ interface PeerConnection {
 }
 
 interface Call {
+  test: (howMany: number) => void;
   userId: string;
   solo: boolean;
   passphrase: string;
@@ -78,6 +79,13 @@ interface Call {
 }
 
 export const useCallStore = create<Call>((set, get) => ({
+  test: async (howMany: number) => {
+    const stream = await getUserStream(false, "", true, "user");
+    set({ solo: false, userStream: stream });
+    for (let i = 0; i < howMany; i++) {
+      get().addRemoteStream(`${i}`, stream);
+    }
+  },
   userId: v7(),
   solo: true,
   passphrase: "",

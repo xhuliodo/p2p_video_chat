@@ -1,9 +1,10 @@
-import { FC, useEffect, useRef } from "react";
+import { FC, useEffect, useMemo, useRef } from "react";
 import { useCallStore } from "../state/call";
 // import { NetworkStatus } from "./NetworkStatus";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { useWindowDimensions } from "../hooks/useWindowDimensions";
 import { useShallow } from "zustand/shallow";
+import { NetworkStatus } from "./NetworkStatus";
 
 export const RemoteVideos = () => {
   const { remoteStreams, solo } = useCallStore(
@@ -12,18 +13,21 @@ export const RemoteVideos = () => {
       solo: state.solo,
     })),
   );
+  const participants = useMemo(
+    () => Object.keys(remoteStreams).length,
+    [remoteStreams],
+  );
   const { windowDimensions } = useWindowDimensions();
   const styles = () => {
-    const count = Object.keys(remoteStreams).length;
-    if (count <= 1) return "grid-cols-1 grid-rows-1";
-    if (count === 2) {
+    if (participants <= 1) return "grid-cols-1 grid-rows-1";
+    if (participants === 2) {
       return windowDimensions.height > windowDimensions.width
         ? "grid-cols-1 grid-rows-2"
         : "grid-cols-2 grid-rows-1";
     }
-    if (count === 3) return "grid-cols-2 grid-rows-2 grid-areas-three";
-    if (count <= 4) return "grid-cols-2 grid-rows-2";
-    if (count <= 6)
+    if (participants === 3) return "grid-cols-2 grid-rows-2 grid-areas-three";
+    if (participants <= 4) return "grid-cols-2 grid-rows-2";
+    if (participants <= 6)
       return windowDimensions.height > windowDimensions.width
         ? "grid-cols-2 grid-rows-3"
         : "grid-cols-3 grid-rows-2";
@@ -33,19 +37,22 @@ export const RemoteVideos = () => {
   return (
     <>
       {!solo && (
-        <div className="h-full w-full bg-gray-400">
+        <div className="h-full w-full bg-[#008b8b] bg-opacity-70">
           <div
-            className={`grid h-full w-full items-center justify-center gap-2 ${styles()}`}
+            className={`grid h-full w-full items-center justify-center ${participants > 1 && "p-2"} gap-2 ${styles()}`}
           >
             {Object.entries(remoteStreams).map(([key, stream]) => {
               return stream ? (
-                <RemoteVideo key={key} remoteStream={stream} />
+                <RemoteVideo
+                  key={key}
+                  remoteStream={stream}
+                  connectionKey={key}
+                />
               ) : (
                 <LoadingSpinner key={key} className="h-20 w-20" />
               );
             })}
           </div>
-          {/* <NetworkStatus /> */}
         </div>
       )}
     </>
@@ -54,8 +61,9 @@ export const RemoteVideos = () => {
 
 interface RemoteVideoProps {
   remoteStream: MediaStream;
+  connectionKey: string;
 }
-const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
+const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream, connectionKey }) => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     const remoteVideo = remoteVideoRef.current;
@@ -84,11 +92,14 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
     }
   }, [remoteStream]);
   return (
-    <video
-      ref={remoteVideoRef}
-      playsInline
-      autoPlay
-      className="h-full w-full object-cover"
-    />
+    <div className="h-full w-full relative">
+      <video
+        ref={remoteVideoRef}
+        playsInline
+        autoPlay
+        className="h-full w-full rounded-md object-cover"
+      />
+      <NetworkStatus connectionKey={connectionKey} />
+    </div>
   );
 };
