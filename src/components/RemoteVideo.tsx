@@ -39,17 +39,20 @@ export const RemoteVideos = () => {
       {!solo && (
         <div className="h-full w-full bg-[#008b8b] bg-opacity-70">
           <div
-            className={`grid h-full w-full items-center justify-center ${participants > 1 && "p-2"} gap-2 ${styles()}`}
+            className={`grid h-full w-full ${participants > 1 && "p-2"} gap-2 ${styles()}`}
           >
             {Object.entries(remoteStreams).map(([key, stream]) => {
-              return stream ? (
+              return !stream ? (
                 <RemoteVideo
                   key={key}
                   remoteStream={stream}
                   connectionKey={key}
                 />
               ) : (
-                <LoadingSpinner key={key} className="h-20 w-20" />
+                <LoadingSpinner
+                  key={key}
+                  className="h-20 w-20 place-self-center"
+                />
               );
             })}
           </div>
@@ -92,7 +95,7 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream, connectionKey }) => {
     }
   }, [remoteStream]);
   return (
-    <div className="h-full w-full relative">
+    <div className="relative h-full w-full">
       <video
         ref={remoteVideoRef}
         playsInline
