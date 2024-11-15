@@ -42,7 +42,7 @@ export const RemoteVideos = () => {
             className={`grid h-full w-full ${participants > 1 && "p-2"} gap-2 ${styles()}`}
           >
             {Object.entries(remoteStreams).map(([key, stream]) => {
-              return !stream ? (
+              return stream ? (
                 <RemoteVideo
                   key={key}
                   remoteStream={stream}
