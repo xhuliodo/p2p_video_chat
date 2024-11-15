@@ -11,6 +11,7 @@ import {
   deleteCallConnection,
   deleteParticipant,
   getCallByPassphrase,
+  getCallParticipantsByPassphrase,
   Participant,
   subscribeToConnectionUpdates,
   subscribeToIceCandidatesUpdates,
@@ -221,7 +222,12 @@ export const useCallStore = create<Call>((set, get) => ({
     const handleConnectionUpdates = async (
       connections: Record<string, Connection>,
     ) => {
-      const { userId, peerConnections } = get();
+      const {
+        userId,
+        peerConnections,
+        deletePeerConnection,
+        deleteRemoteStream,
+      } = get();
       for (const connectionKey of Object.keys(connections)) {
         // skip connections you are not a part in
         if (!connectionKey.includes(userId)) {
@@ -230,6 +236,14 @@ export const useCallStore = create<Call>((set, get) => ({
         }
 
         const currentConnection = connections[connectionKey];
+        // clean up deleted connections if not already
+        if (currentConnection.deleted && peerConnections[connectionKey]) {
+          console.log("cleaning up deleted connections");
+          deletePeerConnection(connectionKey);
+          deleteRemoteStream(connectionKey);
+          continue;
+        }
+
         // skip connections you have already handled
         if (currentConnection.done) {
           console.log(
@@ -471,21 +485,18 @@ export const useCallStore = create<Call>((set, get) => ({
     } = get();
 
     subscriptions.forEach((s) => s());
-    await deleteParticipant(passphrase, userId);
     Object.keys(remoteStreams).forEach((rsKey) => deleteRemoteStream(rsKey));
     Object.keys(peerConnections).forEach((pcKey) =>
       deletePeerConnection(pcKey),
     );
 
-    const call = await getCallByPassphrase(passphrase);
-    console.log(call);
-    if (
-      call &&
-      call?.participants &&
-      Object.keys(call.participants).length === 0
-    ) {
-      console.log("delete call as last participant");
+    const participants = await getCallParticipantsByPassphrase(passphrase);
+    if (Object.keys(participants).length <= 1) {
+      console.log("deleted call as last participant");
       await deleteCallByPassphrase(passphrase);
+    } else {
+      console.log("removing myself as a participant");
+      await deleteParticipant(passphrase, userId);
     }
 
     set(() => ({ passphrase: v7() }));

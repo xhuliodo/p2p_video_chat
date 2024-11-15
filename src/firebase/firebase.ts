@@ -11,6 +11,7 @@ import {
   updateDoc,
   increment,
   getDoc,
+  getDocs,
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -35,10 +36,12 @@ export interface Connection {
   offer: RTCSessionDescriptionInit;
   answer?: RTCSessionDescriptionInit;
   done?: boolean;
+  // this property is used in app but not on the database
+  deleted?: boolean;
 }
 
 export interface Call {
-  participants: Record<string, Connection>;
+  participants: Record<string, Participant>;
   connections: Record<string, Connection>;
   offerCandidates: Record<string, RTCIceCandidate>;
   answerCandidates?: Record<string, RTCIceCandidate>;
@@ -89,6 +92,29 @@ export const addParticipant = (
   return setDoc(callDocRef, { disconnections: 0 });
 };
 
+export const getCallParticipantsByPassphrase = async (
+  passphrase: string,
+): Promise<Record<string, Participant>> => {
+  const participantsDocRef = collection(
+    firestore,
+    "calls",
+    passphrase,
+    "participants",
+  );
+
+  const snapshot = await getDocs(participantsDocRef);
+  if (snapshot.empty) {
+    return {};
+  }
+
+  const participants: Record<string, Participant> = {};
+  snapshot.forEach((doc) => {
+    participants[doc.id] = doc.data() as Participant;
+  });
+
+  return participants;
+};
+
 export const updateParticipantDisconnections = (
   passphrase: string,
   userId: string,
@@ -100,7 +126,7 @@ export const updateParticipantDisconnections = (
     "participants",
     userId,
   );
-  return setDoc(callDocRef, { disconnections: increment(1) });
+  return updateDoc(callDocRef, { disconnections: increment(1) });
 };
 
 export const deleteParticipant = (
@@ -230,8 +256,12 @@ export const subscribeToConnectionUpdates = (
   return onSnapshot(callDocRef, {
     next: (snapshot) => {
       const connections: Record<string, Connection> = {};
-      snapshot.forEach((doc) => {
-        connections[doc.id] = doc.data() as Connection;
+      snapshot.docChanges().forEach((snap) => {
+        const doc = snap.doc.data() as Connection;
+        if (snap.type === "removed") {
+          doc.deleted = true;
+        }
+        connections[snap.doc.id] = doc;
       });
       callbackFunc(connections);
     },
@@ -271,11 +301,3 @@ export const subscribeToIceCandidatesUpdates = (
     },
   });
 };
-
-// export const updateCallLeft = async (
-//   passphrase: string,
-//   left: boolean,
-// ): Promise<void> => {
-//   const callDocRef = doc(firestore, "calls", passphrase);
-//   return await setDoc(callDocRef, { left });
-// };
