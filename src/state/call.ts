@@ -34,10 +34,11 @@ interface PeerConnection {
   subscription: () => void;
 }
 
-interface Message {
+export interface Message {
   content: string;
   timestamp: number;
-  sentByUser?: boolean;
+  sentByUser: boolean;
+  username?: string;
 }
 
 interface Call {
@@ -73,6 +74,9 @@ interface Call {
     answer: RTCSessionDescriptionInit,
   ) => void;
   handleReconnection: (connectionKey: string) => Promise<void>;
+  username: string;
+  setUsername: (username: string) => void;
+  clearUsername: () => void;
   messages: Message[];
   addMessageChannel: (key: string, messageChannel: RTCDataChannel) => void;
   receiveMessage: (event: MessageEvent) => void;
@@ -535,6 +539,15 @@ export const useCallStore = create<Call>((set, get) => ({
     // since the offer is dependent on the participants, we just have to update the user with just an empty object
     await updateParticipantDisconnections(passphrase, userId);
   },
+  username: localStorage.getItem("username") || "",
+  setUsername: (username: string) => {
+    set(() => ({ username }));
+    localStorage.setItem("username", username);
+  },
+  clearUsername: () => {
+    set(() => ({ username: "" }));
+    localStorage.removeItem("username");
+  },
   messages: [],
   addMessageChannel: (key: string, messageChannel: RTCDataChannel) => {
     set((state) =>
@@ -556,7 +569,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }
   },
   sendMessage: (content: string) => {
-    const { peerConnections } = get();
+    const { peerConnections, username } = get();
     const now = Date.now();
     const participantsCount = Object.keys(peerConnections).length;
     let failures = 0;
@@ -564,7 +577,7 @@ export const useCallStore = create<Call>((set, get) => ({
       Object.keys(peerConnections).map((k) => {
         const currentPeerConnection = peerConnections[k];
         currentPeerConnection.messageChannel?.send(
-          JSON.stringify({ content, timestamp: now }),
+          JSON.stringify({ content, timestamp: now, username }),
         );
       });
       set((state) => ({
