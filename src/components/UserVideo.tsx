@@ -7,17 +7,28 @@ import { Resizable } from "re-resizable";
 import { Direction } from "re-resizable/lib/resizer";
 import { useWindowDimensions } from "../hooks/useWindowDimensions";
 import { Icon } from "@iconify/react";
+import { useShallow } from "zustand/shallow";
 
-interface UserVideoProps {
-  solo: boolean;
-}
-const UserVideo: React.FC<UserVideoProps> = ({ solo }) => {
-  const userStream = useCallStore((state) => state.userStream);
-  const isAudioEnabled = useCallStore((state) => state.isAudioEnabled);
-  const switchAudio = useCallStore((state) => state.switchAudio);
-  const isCameraEnabled = useCallStore((state) => state.isCameraEnabled);
-  const switchCamera = useCallStore((state) => state.switchCamera);
-  const shouldFlip = useCallStore((state) => state.shouldFlip);
+const UserVideo: React.FC = () => {
+  const {
+    solo,
+    isAudioEnabled,
+    isCameraEnabled,
+    shouldFlip,
+    switchAudio,
+    switchCamera,
+    userStream,
+  } = useCallStore(
+    useShallow((state) => ({
+      solo: state.solo,
+      userStream: state.userStream,
+      isAudioEnabled: state.isAudioEnabled,
+      switchAudio: state.switchAudio,
+      isCameraEnabled: state.isCameraEnabled,
+      switchCamera: state.switchCamera,
+      shouldFlip: state.shouldFlip,
+    })),
+  );
 
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
@@ -29,12 +40,16 @@ const UserVideo: React.FC<UserVideoProps> = ({ solo }) => {
 
       // Wait for metadata to load before playing
       const playVideo = () => {
-        userVideo.play().catch((error) => console.error("Play error:", error));
+        userVideo
+          .play()
+          .catch((error) =>
+            console.error("Failed to play user video with error:", error),
+          );
       };
       // Listen for loadedmetadata event, then play video
       userVideo.addEventListener("loadedmetadata", playVideo);
 
-      // Clean up by stopping tracks and removing the event listener
+      // Clean up by pausing the video and removing the event listener
       return () => {
         userVideo.pause();
         userVideo.removeEventListener("loadedmetadata", playVideo);
@@ -157,7 +172,13 @@ export const DraggableAndResizableUserVideo = () => {
         height: windowDimensions.height,
       });
     }
-  }, [size.height, size.width, solo, windowDimensions.height, windowDimensions.width]);
+  }, [
+    size.height,
+    size.width,
+    solo,
+    windowDimensions.height,
+    windowDimensions.width,
+  ]);
   const handleOnDragStart: DraggableEventHandler = () => {
     setIsDragging(true);
   };
@@ -251,7 +272,7 @@ export const DraggableAndResizableUserVideo = () => {
             topRight: `z-20 !h-fit !w-fit !-right-[15px] !-top-[15px]`,
           }}
         >
-          <UserVideo solo={solo} />
+          <UserVideo />
         </Resizable>
       </div>
     </Draggable>

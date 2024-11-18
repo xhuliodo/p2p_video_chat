@@ -10,4 +10,11 @@ export const toasts = {
   noRearCamera: () => {
     toast("You don't have a rear facing camera to switch to.");
   },
+  failedMessageDelivery: (all: boolean) => {
+    toast(
+      "Message could not be sent to " + all
+        ? "all "
+        : "some " + "of your buddies, please try again.",
+    );
+  },
 };

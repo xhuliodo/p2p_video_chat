@@ -1,5 +1,3 @@
-import { RemoteVideo } from "../components/RemoteVideo";
-import { DraggableAndResizableUserVideo } from "../components/UserVideo";
 import { useCallStore } from "../state/call";
 import { useParams } from "react-router-dom";
 import { useEffect } from "react";
@@ -7,6 +5,8 @@ import { ToastContainer } from "react-toastify";
 import { CallButtons } from "../components/CallButtons";
 import { Messages } from "../components/Messages";
 import { toasts } from "../notifications/toasts";
+import { DraggableAndResizableUserVideo } from "../components/UserVideo";
+import { RemoteVideos } from "../components/RemoteVideo";
 
 export const Call = () => {
   const endCall = useCallStore((state) => state.endCall);
@@ -38,7 +38,7 @@ export const Call = () => {
   return (
     <div className="callScreen h-dvh w-screen">
       <DraggableAndResizableUserVideo />
-      <RemoteVideo />
+      <RemoteVideos />
       <CallButtons />
       <Messages />
       <ToastContainer

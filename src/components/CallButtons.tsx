@@ -4,19 +4,28 @@ import { useCallStore } from "../state/call";
 import { Icon } from "@iconify/react";
 import { useAutoCollapse } from "../hooks/useAutoCollapse";
 import { toasts } from "../notifications/toasts";
+import { useShallow } from "zustand/shallow";
 
 export const CallButtons: FC = () => {
-  const solo = useCallStore((state) => state.solo);
-  const endCall = useCallStore((state) => state.endCall);
-  const switchCameraPerspective = useCallStore(
-    (state) => state.switchCameraPerspective,
+  const {
+    solo,
+    switchCameraPerspective,
+    canSwitchCameraPerspective,
+    endCall,
+    toggleMessages,
+    canSendMessage,
+    newMessage,
+  } = useCallStore(
+    useShallow((state) => ({
+      solo: state.solo,
+      switchCameraPerspective: state.switchCameraPerspective,
+      canSwitchCameraPerspective: state.canSwitchCameraPerspective,
+      endCall: state.endCall,
+      toggleMessages: state.toggleMessages,
+      canSendMessage: state.canSendMessage,
+      newMessage: state.newMessage,
+    })),
   );
-  const canSwitchCameraPerspective = useCallStore(
-    (state) => state.canSwitchCameraPerspective,
-  );
-  const toggleMessages = useCallStore((state) => state.toggleMessages);
-  const canSendMessage = useCallStore((state) => state.canSendMessage);
-  const newMessage = useCallStore((state) => state.newMessage);
 
   const onClickShare = () => {
     const shareData = {

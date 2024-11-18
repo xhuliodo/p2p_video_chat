@@ -1,43 +1,92 @@
 import { create } from "zustand";
 import { v7 } from "uuid";
-import { toast } from "react-toastify";
 import { router } from "../routes";
 // import { sounds } from "../notifications/sounds";
 import { toasts } from "../notifications/toasts";
 import {
-  CallDb,
+  addParticipant,
+  Connection,
+  createCall,
   deleteCallByPassphrase,
+  deleteCallConnection,
+  deleteParticipant,
   getCallByPassphrase,
-  subscribeToCallUpdates,
+  getCallParticipantsByPassphrase,
+  Participant,
+  subscribeToConnectionUpdates,
+  subscribeToIceCandidatesUpdates,
+  subscribeToParticipantsUpdates,
   updateCallAnswer,
-  updateCallAnswerIceCandidates,
-  updateCallLeft,
+  updateCallConnectionStatus,
+  updateCallIceCandidates,
   updateCallOffer,
-  updateCallOfferIceCandidates,
+  updateParticipantDisconnections,
 } from "../firebase/firebase";
 import { sounds } from "../notifications/sounds";
+import { toast } from "react-toastify";
+import { produce } from "immer";
 
-interface Message {
-  content: string;
-  timestamp: number;
-  sentByUser?: boolean;
-}
-
-type NetworkStatus = "undefined" | "good" | "poor";
 type CameraPerspective = "environment" | "user";
 
+interface PeerConnection {
+  peerConnection: RTCPeerConnection;
+  messageChannel: RTCDataChannel | null;
+  subscription: () => void;
+}
+
+export interface Message {
+  content: string;
+  timestamp: number;
+  sentByUser: boolean;
+  username?: string;
+}
+
 interface Call {
-  ongoing: boolean;
+  test: (howMany: number) => void;
+  userId: string;
   solo: boolean;
   passphrase: string;
   isCreator: boolean;
-  startCall: (passphrase: string) => Promise<void>;
-  joinCall: (
-    passphrase: string,
-    foundCall: CallDb,
+  userStream: MediaStream | null;
+  remoteStreams: Record<string, MediaStream>;
+  addRemoteStream: (key: string, stream: MediaStream) => void;
+  deleteRemoteStream: (key: string) => void;
+  peerConnections: Record<string, PeerConnection>;
+  addPeerConnection: (
+    key: string,
     peerConnection: RTCPeerConnection,
+    subscriptions: () => void,
   ) => void;
-  createCall: (passphrase: string, peerConnection: RTCPeerConnection) => void;
+  deletePeerConnection: (key: string) => void;
+  startCall: (passphrase: string) => Promise<void>;
+  handleOffer: (passphrase: string, connectionKey: string) => Promise<void>;
+  waitForIceCandidatesOrTimeout: (
+    connectionKey: string,
+    timeout: number,
+  ) => Promise<string>;
+  handleAnswer: (
+    passphrase: string,
+    connectionKey: string,
+    offer: RTCSessionDescriptionInit,
+  ) => Promise<void>;
+  handleAnswerResponse: (
+    connectionKey: string,
+    answer: RTCSessionDescriptionInit,
+  ) => void;
+  handleReconnection: (connectionKey: string) => Promise<void>;
+  username: string;
+  setUsername: (username: string) => void;
+  clearUsername: () => void;
+  messages: Message[];
+  addMessageChannel: (key: string, messageChannel: RTCDataChannel) => void;
+  receiveMessage: (event: MessageEvent) => void;
+  sendMessage: (content: string) => void;
+  canSendMessage: boolean;
+  showMessages: boolean;
+  newMessage: boolean;
+  toggleMessages: () => void;
+  subscriptions: (() => void)[];
+  endCall: () => Promise<void>;
   isAudioEnabled: boolean;
   switchAudio: () => void;
   isCameraEnabled: boolean;
@@ -46,224 +95,545 @@ interface Call {
   shouldFlip: boolean;
   canSwitchCameraPerspective: boolean;
   switchCameraPerspective: () => Promise<void>;
-  userStream: MediaStream | null;
-  remoteStream: MediaStream | null;
-  peerConnection: RTCPeerConnection;
-  remoteIceCandidates: Set<string>;
-  endCall: () => Promise<void>;
-  subscriptions: (() => void)[];
-  remoteNetworkStatus: NetworkStatus;
-  poorNetworkQualityCount: number;
-  poorNetworkQualityThreshold: number;
-  checkNetworkQuality: () => void;
-  messages: Message[];
-  messageChannel: RTCDataChannel | null;
-  receiveMessage: (event: MessageEvent) => void;
-  sendMessage: (content: string) => void;
-  canSendMessage: boolean;
-  showMessages: boolean;
-  newMessage: boolean;
-  toggleMessages: () => void;
 }
 
 export const useCallStore = create<Call>((set, get) => ({
-  ongoing: false,
+  test: async (howMany: number) => {
+    const stream = await getUserStream(false, "", true, "user");
+    set({ solo: false, userStream: stream });
+    for (let i = 0; i < howMany; i++) {
+      get().addRemoteStream(`${i}`, stream);
+    }
+  },
+  userId: v7(),
   solo: true,
   passphrase: "",
   isCreator: false,
   userStream: null,
-  remoteStream: null,
-  peerConnection: new RTCPeerConnection(),
-  remoteIceCandidates: new Set([]),
+  remoteStreams: {},
+  addRemoteStream: (key: string, stream: MediaStream) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.remoteStreams[key] = stream;
+        return draft;
+      }),
+    );
+  },
+  deleteRemoteStream: (key: string) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.remoteStreams[key].getTracks().forEach((t) => t.stop());
+        delete draft.remoteStreams[key];
+        return draft;
+      }),
+    );
+  },
+  peerConnections: {},
+  addPeerConnection: (
+    key: string,
+    peerConnection: RTCPeerConnection,
+    subscription: () => void,
+  ) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.peerConnections[key] = {
+          peerConnection,
+          messageChannel: null,
+          subscription,
+        };
+        if (draft.solo) {
+          draft.solo = false;
+        }
+        return draft;
+      }),
+    );
+  },
+  deletePeerConnection: (key: string) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.peerConnections[key].messageChannel?.close();
+        draft.peerConnections[key].peerConnection.close();
+        draft.peerConnections[key].subscription();
+        delete draft.peerConnections[key];
+        if (Object.keys(draft.peerConnections).length === 0) {
+          draft.solo = true;
+          draft.canSendMessage = false;
+          draft.showMessages = false;
+        }
+        return draft;
+      }),
+    );
+  },
   startCall: async (passphrase) => {
     const {
       isAudioEnabled,
       isCameraEnabled,
-      joinCall,
-      createCall,
-      endCall,
       cameraPerspective,
-      receiveMessage,
+      userId,
+      waitForIceCandidatesOrTimeout,
+      handleAnswer,
+      handleOffer,
+      handleAnswerResponse,
     } = get();
     let stream;
     try {
       stream = await getUserStream(
         isAudioEnabled,
+        "",
         isCameraEnabled,
         cameraPerspective,
       );
+      stream = await checkForBluetoothAudioDevices(stream);
     } catch {
       router.navigate("/", {
         state: { message: "Permissions of camera and audio are required!" },
       });
       return;
     }
-
-    const peerConnection = await newPeerConnection();
-    // Add local stream tracks to the peer connection
-    stream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, stream);
-    });
-
-    // Setup message channel
-    const messageChannel = peerConnection.createDataChannel("chat", {
-      negotiated: true,
-      id: 0,
-    });
-    messageChannel.onopen = () => {
-      console.log("Message channel is open");
-      set(() => ({ canSendMessage: true }));
-    };
-    messageChannel.onclose = () => {
-      console.log("Message channel is closed");
-      set(() => ({ canSendMessage: false, showMessages: false }));
-    };
-    messageChannel.onerror = (e) => {
-      console.log("something went wrong: ", e);
-    };
-    messageChannel.onmessage = receiveMessage;
-    set(() => ({ messageChannel }));
-
-    set(() => ({
-      ongoing: true,
-      userStream: stream,
-      passphrase,
-      peerConnection,
-    }));
-
-    // Handle incoming tracks from remote peers
-    peerConnection.ontrack = (event) => {
-      if (event.streams.length) {
-        sounds.callStartedSound.play();
-      }
-      event.streams.forEach((s) =>
-        set(() => ({ solo: false, remoteStream: s })),
-      );
-    };
-
-    // Show connection status
-    peerConnection.oniceconnectionstatechange = async () => {
-      const state = peerConnection.iceConnectionState;
-      toast(state);
-      if (state === "closed" || state === "failed") {
-        await endCall();
-        deleteCallByPassphrase(passphrase);
-        router.navigate("/", {
-          state: { message: "Could not connect." },
-        });
-      }
-    };
+    set(() => ({ userStream: stream, passphrase }));
 
     const foundCall = await getCallByPassphrase(passphrase);
-    // If the passphrase already exists in the database (answering a call)
     if (!foundCall) {
-      createCall(passphrase, peerConnection);
-    } else {
-      joinCall(passphrase, foundCall, peerConnection);
+      await createCall(passphrase);
     }
 
-    const handleCallUpdates = async (updatedCall: CallDb) => {
-      if (!updatedCall?.left) {
-        return;
-      }
-
-      await endCall();
-      const { passphrase } = get();
-      deleteCallByPassphrase(passphrase);
-      router.navigate("/", {
-        state: { message: "Your buddy left the call." },
-      });
-    };
-    const sub = subscribeToCallUpdates(passphrase, handleCallUpdates);
-    set((state) => ({ subscriptions: [...state.subscriptions, sub] }));
-  },
-  joinCall: async (
-    passphrase: string,
-    foundCall: CallDb,
-    peerConnection: RTCPeerConnection,
-  ) => {
-    console.log("room exists, joining it");
-    if (foundCall.answer) {
+    if (
+      foundCall?.participants &&
+      Object.keys(foundCall.participants).length > 5
+    ) {
       router.navigate("/", {
         state: { message: "Room is full!" },
       });
       return;
     }
 
-    // Handle ICE candidates
-    peerConnection.onicecandidate = async (event) => {
-      if (event.candidate) {
-        updateCallAnswerIceCandidates(passphrase, event.candidate);
+    // add event listener for when a new participant gets on call and see if you are
+    // the one supposed to make an offer
+    const handleParticipantsUpdates = async (
+      participants: Record<string, Participant>,
+    ) => {
+      const { userId, peerConnections } = get();
+      for (const participantId of Object.keys(participants)) {
+        // skip yoself
+        if (participantId === userId) {
+          continue;
+        }
+
+        const connectionKey = getConnectionKey(userId, participantId);
+        // you have already established a connection with this participant
+        if (peerConnections[connectionKey]) {
+          continue;
+        }
+        console.log("a new participant has joined the call");
+
+        const isOfferer = getIsOfferer(userId, participantId);
+        if (isOfferer) {
+          console.log("you are making them an offer");
+          await handleOffer(passphrase, connectionKey);
+          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
+          console.log(res);
+          continue;
+        }
+
+        console.log("you are waiting for their offer");
       }
     };
+    const participantsSub = subscribeToParticipantsUpdates(
+      passphrase,
+      handleParticipantsUpdates,
+    );
 
-    await peerConnection.setRemoteDescription(foundCall.offer);
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    await updateCallAnswer(passphrase, answer);
+    // add yourself in the participants list, and at the same time create the call if it does not exists
+    await addParticipant(passphrase, userId);
 
-    foundCall.offerCandidates?.forEach((c) => {
-      peerConnection.addIceCandidate(c);
+    // add event listener for when an offer has been made to you
+    // this functions handles the cases:
+    // when an offer has been made
+    // when an answer has been made
+    const handleConnectionUpdates = async (
+      connections: Record<string, Connection>,
+    ) => {
+      const {
+        userId,
+        peerConnections,
+        deletePeerConnection,
+        deleteRemoteStream,
+      } = get();
+      for (const connectionKey of Object.keys(connections)) {
+        // skip connections you are not a part in
+        if (!connectionKey.includes(userId)) {
+          console.log("no need to take any action for this connection");
+          continue;
+        }
+
+        const currentConnection = connections[connectionKey];
+        // clean up deleted connections if not already
+        if (currentConnection.deleted && peerConnections[connectionKey]) {
+          console.log("cleaning up deleted connections");
+          deletePeerConnection(connectionKey);
+          deleteRemoteStream(connectionKey);
+          continue;
+        }
+
+        // skip connections you have already handled
+        if (currentConnection.done) {
+          console.log(
+            "connection established, no need to consider further updates",
+          );
+          continue;
+        }
+
+        const isOfferer = getIsOffererFromConnectionKey(userId, connectionKey);
+        // handle the update as the offerer
+        if (isOfferer) {
+          if (!currentConnection.answer) {
+            console.log("no answer for the offer yet");
+            continue;
+          }
+          if (
+            peerConnections[connectionKey] &&
+            peerConnections[connectionKey].peerConnection.remoteDescription
+          ) {
+            console.log("already handled this response");
+            continue;
+          }
+
+          console.log("got an answer to the offer made");
+          handleAnswerResponse(connectionKey, currentConnection.answer);
+          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
+          console.log(res);
+          await updateCallConnectionStatus(passphrase, connectionKey);
+
+          continue;
+          // handle the update as the answerer
+        } else {
+          if (currentConnection.answer) {
+            console.log("already answered this offer");
+            continue;
+          }
+
+          console.log("got a new offer");
+          await handleAnswer(
+            passphrase,
+            connectionKey,
+            currentConnection.offer,
+          );
+          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
+          console.log(res);
+        }
+      }
+    };
+    const connectionSub = subscribeToConnectionUpdates(
+      passphrase,
+      handleConnectionUpdates,
+    );
+
+    set((state) => ({
+      subscriptions: [...state.subscriptions, participantsSub, connectionSub],
+    }));
+  },
+  handleOffer: async (passphrase: string, connectionKey: string) => {
+    const { userStream, handleReconnection, addMessageChannel } = get();
+    const newPeerConnection = await getPeerConnection();
+    // Add local stream tracks to the peer connection
+    userStream?.getTracks().forEach((track) => {
+      newPeerConnection.addTrack(track, userStream);
     });
 
-    const handleCallUpdates = (updatedCall: CallDb) => {
-      const { peerConnection: currentPeerConnection, remoteIceCandidates } =
-        get();
-      updatedCall.offerCandidates?.forEach((c) => {
-        if (!remoteIceCandidates.has(c.candidate)) {
-          currentPeerConnection.addIceCandidate(c);
-          set((state) => ({
-            remoteIceCandidates: new Set([
-              ...state.remoteIceCandidates,
-              c.candidate,
-            ]),
-          }));
-        }
-      });
+    // try and setup a message channel
+    const messageChannel = newPeerConnection.createDataChannel("chat");
+    messageChannel.onopen = () => {
+      console.log("Message channel is open");
+      set(() => ({ canSendMessage: true }));
     };
-    const unsub = subscribeToCallUpdates(passphrase, handleCallUpdates);
+    messageChannel.onclose = () => {
+      console.log("Message channel is closed");
+    };
+    messageChannel.onerror = (e) => {
+      console.log("something went wrong: ", e);
+    };
+    messageChannel.onmessage = get().receiveMessage;
 
-    set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
-  },
-  createCall: async (passphrase: string, peerConnection: RTCPeerConnection) => {
-    // If the passphrase does not exist (creating a call)
-    console.log("call does not exist, creating it");
-    set(() => ({ isCreator: true }));
-
-    // Handle ICE candidates
-    peerConnection.onicecandidate = async (event) => {
-      if (event.candidate) {
-        updateCallOfferIceCandidates(passphrase, event.candidate);
+    // Handle incoming tracks from remote peers
+    newPeerConnection.ontrack = (event) => {
+      const { addRemoteStream } = get();
+      if (event.streams.length) {
+        sounds.callStartedSound.play();
+        event.streams.map((s) => addRemoteStream(connectionKey, s));
+      }
+    };
+    newPeerConnection.oniceconnectionstatechange = async () => {
+      const state = newPeerConnection.iceConnectionState;
+      toast(state);
+      if (
+        state === "failed" ||
+        state === "disconnected" ||
+        state === "closed" ||
+        state === "completed"
+      ) {
+        handleReconnection(connectionKey);
       }
     };
 
     // Create an offer to connect to the remote peer
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    await updateCallOffer(passphrase, offer);
+    const offer = await newPeerConnection.createOffer({ iceRestart: false });
+    await newPeerConnection.setLocalDescription(offer);
+    await updateCallOffer(passphrase, connectionKey, offer);
 
-    const handleCallUpdates = (updatedCall: CallDb) => {
-      const { peerConnection: currentPeerConnection, remoteIceCandidates } =
-        get();
-      if (!currentPeerConnection.remoteDescription && updatedCall.answer) {
-        currentPeerConnection.setRemoteDescription(updatedCall.answer);
-      }
-      if (updatedCall.answerCandidates) {
-        updatedCall.answerCandidates.forEach((c) => {
-          if (!remoteIceCandidates.has(c.candidate)) {
-            currentPeerConnection.addIceCandidate(c);
-            set((state) => ({
-              remoteIceCandidates: new Set([
-                ...state.remoteIceCandidates,
-                c.candidate,
-              ]),
-            }));
-          }
-        });
+    // Handle ICE candidates
+    newPeerConnection.onicecandidate = async (event) => {
+      if (event.candidate) {
+        updateCallIceCandidates(
+          passphrase,
+          connectionKey,
+          true,
+          event.candidate,
+        );
       }
     };
-    const unsub = subscribeToCallUpdates(passphrase, handleCallUpdates);
-    set((state) => ({ subscriptions: [...state.subscriptions, unsub] }));
+
+    const handleIceCandidatesUpdates = (iceCandidate: RTCIceCandidate) => {
+      if (iceCandidate) newPeerConnection.addIceCandidate(iceCandidate);
+    };
+    const iceCandidatesSub = subscribeToIceCandidatesUpdates(
+      passphrase,
+      connectionKey,
+      false,
+      handleIceCandidatesUpdates,
+    );
+
+    const { addPeerConnection } = get();
+    addPeerConnection(connectionKey, newPeerConnection, iceCandidatesSub);
+    addMessageChannel(connectionKey, messageChannel);
+  },
+  waitForIceCandidatesOrTimeout: (connectionKey: string, timeout: number) => {
+    return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        resolve("Timeout reached");
+      }, timeout);
+
+      const checkCondition = () => {
+        const { peerConnections } = get();
+        if (
+          peerConnections[connectionKey].peerConnection.iceGatheringState ===
+          "complete"
+        ) {
+          clearTimeout(timeoutId);
+          resolve("Ice candidates gathered");
+        } else {
+          // Continue checking every 100ms until the condition is met
+          setTimeout(checkCondition, 100);
+        }
+      };
+
+      // Start checking the condition
+      checkCondition();
+    });
+  },
+  handleAnswer: async (
+    passphrase: string,
+    connectionKey: string,
+    offer: RTCSessionDescriptionInit,
+  ) => {
+    const { userStream, handleReconnection, addMessageChannel } = get();
+    const newPeerConnection = await getPeerConnection();
+    // Add local stream tracks to the peer connection
+    userStream?.getTracks().forEach((track) => {
+      newPeerConnection.addTrack(track, userStream);
+    });
+
+    // try and setup a message channel
+    newPeerConnection.ondatachannel = (channelEvent) => {
+      console.log({ channelEvent });
+      const messageChannel = channelEvent.channel;
+      messageChannel.onopen = () => {
+        console.log("Message channel is open");
+        set(() => ({ canSendMessage: true }));
+      };
+      messageChannel.onclose = () => {
+        console.log("Message channel is closed");
+        // set(() => ({ canSendMessage: false, showMessages: false }));
+      };
+      messageChannel.onerror = (e) => {
+        console.log("something went wrong: ", e);
+      };
+      messageChannel.onmessage = get().receiveMessage;
+
+      addMessageChannel(connectionKey, messageChannel);
+    };
+
+    // Handle incoming tracks from remote peers
+    newPeerConnection.ontrack = (event) => {
+      const { addRemoteStream } = get();
+      if (event.streams.length) {
+        sounds.callStartedSound.play();
+        event.streams.map((s) => addRemoteStream(connectionKey, s));
+      }
+    };
+
+    newPeerConnection.oniceconnectionstatechange = async () => {
+      const state = newPeerConnection.iceConnectionState;
+      toast(state);
+      if (
+        state === "failed" ||
+        state === "disconnected" ||
+        state === "closed" ||
+        state === "completed"
+      ) {
+        handleReconnection(connectionKey);
+      }
+    };
+
+    await newPeerConnection.setRemoteDescription(offer);
+    const answer = await newPeerConnection.createAnswer();
+    await newPeerConnection.setLocalDescription(answer);
+    await updateCallAnswer(passphrase, connectionKey, answer);
+
+    // Handle ICE candidates
+    newPeerConnection.onicecandidate = async (event) => {
+      if (event.candidate) {
+        updateCallIceCandidates(
+          passphrase,
+          connectionKey,
+          false,
+          event.candidate,
+        );
+      }
+    };
+
+    const handleIceCandidatesUpdates = (iceCandidate: RTCIceCandidate) => {
+      if (iceCandidate) {
+        newPeerConnection.addIceCandidate(iceCandidate);
+      }
+    };
+    const iceCandidatesSub = subscribeToIceCandidatesUpdates(
+      passphrase,
+      connectionKey,
+      true,
+      handleIceCandidatesUpdates,
+    );
+
+    const { addPeerConnection } = get();
+    addPeerConnection(connectionKey, newPeerConnection, iceCandidatesSub);
+  },
+  handleAnswerResponse: (
+    connectionKey: string,
+    answer: RTCSessionDescriptionInit,
+  ) => {
+    const { peerConnections } = get();
+    peerConnections[connectionKey].peerConnection.setRemoteDescription(answer);
+  },
+  handleReconnection: async (connectionKey: string) => {
+    const { deleteRemoteStream, deletePeerConnection, passphrase, userId } =
+      get();
+    deletePeerConnection(connectionKey);
+    deleteRemoteStream(connectionKey);
+    // reset answer
+    // since the answer in dependent on the connections, we just delete the connection
+    try {
+      await deleteCallConnection(passphrase, connectionKey);
+    } catch (e) {
+      console.log("could not delete call connection with err: ", e);
+    }
+    // reset offer
+    // since the offer is dependent on the participants, we just have to update the user with just an empty object
+    await updateParticipantDisconnections(passphrase, userId);
+  },
+  username: localStorage.getItem("username") || "",
+  setUsername: (username: string) => {
+    set(() => ({ username }));
+    localStorage.setItem("username", username);
+  },
+  clearUsername: () => {
+    set(() => ({ username: "" }));
+    localStorage.removeItem("username");
+  },
+  messages: [],
+  addMessageChannel: (key: string, messageChannel: RTCDataChannel) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.peerConnections[key].messageChannel = messageChannel;
+        return draft;
+      }),
+    );
+  },
+  receiveMessage: (event: MessageEvent) => {
+    const { showMessages } = get();
+    const message = JSON.parse(event.data) as Message;
+    set((state) => ({
+      messages: [...state.messages, { ...message, sentByUser: false }],
+    }));
+    if (!showMessages) {
+      set(() => ({ newMessage: true }));
+      sounds.newMessageSound.play();
+    }
+  },
+  sendMessage: (content: string) => {
+    const { peerConnections, username } = get();
+    const now = Date.now();
+    const participantsCount = Object.keys(peerConnections).length;
+    let failures = 0;
+    try {
+      Object.keys(peerConnections).map((k) => {
+        const currentPeerConnection = peerConnections[k];
+        currentPeerConnection.messageChannel?.send(
+          JSON.stringify({ content, timestamp: now, username }),
+        );
+      });
+      set((state) => ({
+        messages: [
+          ...state.messages,
+          { content, timestamp: now, sentByUser: true },
+        ],
+      }));
+    } catch (e) {
+      failures++;
+      console.log("could not send message with err:", e);
+    }
+    if (failures) {
+      toasts.failedMessageDelivery(failures === participantsCount);
+    }
+  },
+  canSendMessage: false,
+  showMessages: false,
+  newMessage: false,
+  toggleMessages: () => {
+    const { showMessages, newMessage } = get();
+    if (!showMessages && newMessage) {
+      set(() => ({ newMessage: false }));
+    }
+    set(() => ({ showMessages: !showMessages }));
+  },
+  subscriptions: [],
+  endCall: async () => {
+    sounds.callEndedSound.play();
+
+    const {
+      remoteStreams,
+      deleteRemoteStream,
+      peerConnections,
+      deletePeerConnection,
+      passphrase,
+      userId,
+      subscriptions,
+    } = get();
+
+    subscriptions.forEach((s) => s());
+    Object.keys(remoteStreams).forEach((rsKey) => deleteRemoteStream(rsKey));
+    Object.keys(peerConnections).forEach((pcKey) =>
+      deletePeerConnection(pcKey),
+    );
+
+    const participants = await getCallParticipantsByPassphrase(passphrase);
+    if (Object.keys(participants).length <= 1) {
+      console.log("deleted call as last participant");
+      await deleteCallByPassphrase(passphrase);
+    } else {
+      console.log("removing myself as a participant");
+      await deleteParticipant(passphrase, userId);
+    }
+
+    set(() => ({ passphrase: v7() }));
   },
   isAudioEnabled: true,
   switchAudio: async () => {
@@ -288,7 +658,7 @@ export const useCallStore = create<Call>((set, get) => ({
   canSwitchCameraPerspective: true,
   switchCameraPerspective: async () => {
     const {
-      peerConnection,
+      peerConnections,
       cameraPerspective,
       userStream,
       canSwitchCameraPerspective,
@@ -302,6 +672,7 @@ export const useCallStore = create<Call>((set, get) => ({
 
     const newUserStream = await getUserStream(
       false,
+      "",
       true,
       newCameraPerspective,
     );
@@ -329,10 +700,12 @@ export const useCallStore = create<Call>((set, get) => ({
     // add new video track to the ui and to the webrtc connection
     const newVideoTrack = newUserStream.getVideoTracks()[0];
     userStream?.addTrack(newVideoTrack);
-    const sender = peerConnection
-      .getSenders()
-      .find((s) => s.track?.kind === "video");
-    sender?.replaceTrack(newVideoTrack);
+    for (const k of Object.keys(peerConnections)) {
+      const sender = peerConnections[k].peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === "video");
+      sender?.replaceTrack(newVideoTrack);
+    }
 
     // modify the perspective
     set(() => ({
@@ -340,148 +713,64 @@ export const useCallStore = create<Call>((set, get) => ({
       shouldFlip: newCameraPerspective === "user",
     }));
   },
-  endCall: async () => {
-    sounds.callEndedSound.play();
-    const { peerConnection, subscriptions, passphrase, messageChannel } = get();
-    set(() => ({ solo: true, remoteStream: null, messages: [] }));
-    updateCallLeft(passphrase, true);
-    messageChannel?.close();
-    peerConnection?.close();
-    subscriptions.forEach((unsub) => unsub());
-
-    set(() => ({
-      ongoing: false,
-      userStream: null,
-      peerConnection: new RTCPeerConnection(),
-      remoteIceCandidates: new Set([]),
-      passphrase: v7(),
-    }));
-  },
-  subscriptions: [],
-  remoteNetworkStatus: "undefined",
-  poorNetworkQualityCount: 0,
-  poorNetworkQualityThreshold: 3,
-  checkNetworkQuality: async () => {
-    const { peerConnection } = get();
-
-    if (!peerConnection || peerConnection.iceConnectionState !== "connected") {
-      // console.log("Cannot check stats: Peer is disconnected or not connected");
-      set(() => ({ remoteNetworkStatus: "undefined" }));
-      return;
-    }
-
-    try {
-      const stats = await peerConnection.getStats();
-      let packetLossRate = 0;
-      let jitter = 0;
-      let roundTripTime = 0;
-
-      stats.forEach((report) => {
-        // Analyze inbound-rtp stats for packet loss and jitter
-        if (report.type === "inbound-rtp" && report.kind === "video") {
-          if (report.packetsReceived > 0) {
-            packetLossRate =
-              (report.packetsLost / report.packetsReceived) * 100;
-            jitter = report.jitter;
-          }
-        }
-        // Analyze candidate-pair stats for RTT (round-trip time)
-        if (report.type === "candidate-pair" && report.currentRoundTripTime) {
-          roundTripTime = report.currentRoundTripTime;
-        }
-      });
-
-      // Adjusted thresholds to reduce sensitivity
-      const isPoorNetwork =
-        packetLossRate > 8 || jitter > 0.05 || roundTripTime > 0.5;
-
-      if (isPoorNetwork) {
-        set((state) => ({
-          poorNetworkQualityCount: state.poorNetworkQualityCount + 1,
-        }));
-      } else {
-        set(() => ({
-          poorNetworkQualityCount: 0,
-        })); // Reset counter if the network is good
-      }
-
-      // Mark as "poor" only after consistent bad readings
-      if (get().poorNetworkQualityCount >= get().poorNetworkQualityThreshold) {
-        // console.log(`Poor network quality detected:
-        //   Packet loss: ${packetLossRate.toFixed(2)}%,
-        //   Jitter: ${jitter.toFixed(3)}s,
-        //   RTT: ${roundTripTime.toFixed(3)}s`);
-        set(() => ({ remoteNetworkStatus: "poor" }));
-      } else {
-        // console.log(`Good network quality:
-        //   Packet loss: ${packetLossRate.toFixed(2)}%,
-        //   Jitter: ${jitter.toFixed(3)}s,
-        //   RTT: ${roundTripTime.toFixed(3)}s`);
-        set(() => ({ remoteNetworkStatus: "good" }));
-      }
-    } catch (error) {
-      console.error("Error checking network quality: ", error);
-      set(() => ({ remoteNetworkStatus: "undefined" }));
-    }
-  },
-  messages: [],
-  messageChannel: null,
-  receiveMessage: (event: MessageEvent) => {
-    const { showMessages } = get();
-    const message = JSON.parse(event.data) as Message;
-    set((state) => ({
-      messages: [...state.messages, { ...message, sentByUser: false }],
-    }));
-    if (!showMessages) {
-      set(() => ({ newMessage: true }));
-      sounds.newMessageSound.play();
-    }
-  },
-  sendMessage: (content: string) => {
-    const { messageChannel } = get();
-    const now = Date.now();
-    try {
-      messageChannel?.send(JSON.stringify({ content, timestamp: now }));
-      set((state) => ({
-        messages: [
-          ...state.messages,
-          { content, timestamp: now, sentByUser: true },
-        ],
-      }));
-    } catch (e) {
-      console.log("could not send message with err:", e);
-    }
-  },
-  canSendMessage: false,
-  showMessages: false,
-  newMessage: false,
-  toggleMessages: () => {
-    const { showMessages, newMessage } = get();
-    if (!showMessages && newMessage) {
-      set(() => ({ newMessage: false }));
-    }
-    set(() => ({ showMessages: !showMessages }));
-  },
 }));
 
-const getUserStream = (
+const getUserStream = async (
   audio: boolean,
+  audioDeviceId: string,
   video: boolean,
   perspective: "environment" | "user",
 ) => {
   return navigator.mediaDevices.getUserMedia({
-    audio,
+    audio: audio
+      ? {
+          ...(audioDeviceId ? { deviceId: audioDeviceId } : {}),
+          noiseSuppression: true,
+          autoGainControl: true,
+          echoCancellation: true,
+        }
+      : audio,
     video: video
       ? {
-          width: { min: 1024, ideal: 1280, max: 1920 },
-          height: { min: 576, ideal: 720, max: 1080 },
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 360, ideal: 720, max: 1080 },
           facingMode: perspective,
         }
       : video,
   });
 };
 
-async function newPeerConnection(): Promise<RTCPeerConnection> {
+const checkForBluetoothAudioDevices = async (
+  stream: MediaStream,
+): Promise<MediaStream> => {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const audioDevices = devices
+    .filter((d) => d.kind === "audioinput")
+    .filter((d) => {
+      const label = d.label.toLowerCase();
+      return label.includes("airpods") || label.includes("bluetooth");
+    });
+  if (audioDevices.length) {
+    stream.getAudioTracks().forEach((t) => {
+      t.stop();
+      stream.removeTrack(t);
+    });
+
+    const bluetoothDeviceStream = await getUserStream(
+      true,
+      audioDevices[0].deviceId,
+      false,
+      "user",
+    );
+    bluetoothDeviceStream.getAudioTracks().forEach((t) => {
+      stream.addTrack(t);
+    });
+  }
+
+  return stream;
+};
+
+async function getPeerConnection(): Promise<RTCPeerConnection> {
   const iceServers = [
     // STUN server
     { urls: "stun:turn.xhuliodo.xyz:3478" },
@@ -492,12 +781,55 @@ async function newPeerConnection(): Promise<RTCPeerConnection> {
       credential: "bbbX7qQuBSX7kUd5AWtLmouCW",
     },
     {
-      urls: "turn:turn.xhuliodo.xyz:5349",
+      urls: "turns:turn.xhuliodo.xyz:5349",
       username: "Thud3578",
       credential: "bbbX7qQuBSX7kUd5AWtLmouCW",
     },
   ];
   return new RTCPeerConnection({
     iceServers,
+    iceCandidatePoolSize: 5,
   });
 }
+
+const getConnectionKey = (id: string, otherId: string): string => {
+  let key: string;
+
+  if (id < otherId) {
+    // using the "_" character to separate the uuids
+    key = id + "_" + otherId;
+  } else {
+    key = otherId + "_" + id;
+  }
+
+  return key;
+};
+
+// first id should be the current user's id
+const getIsOfferer = (id: string, otherId: string): boolean => {
+  // with id being uuidv7, timestamp is included, so the older user will always create offers
+  // connection keys will also be created with the older id being first
+  // note: "older" means older in time.
+  if (id < otherId) {
+    return true;
+  }
+
+  return false;
+};
+
+const getIsOffererFromConnectionKey = (
+  id: string,
+  connectionKey: string,
+): boolean => {
+  const ids = connectionKey.split("_");
+  if (!ids.length) {
+    console.log("bad connection key");
+    return false;
+  }
+
+  if (ids[0] === id) {
+    return true;
+  }
+
+  return false;
+};
