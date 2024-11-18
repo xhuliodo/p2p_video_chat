@@ -7,18 +7,25 @@ import { toasts } from "../notifications/toasts";
 import { useShallow } from "zustand/shallow";
 
 export const CallButtons: FC = () => {
-  const { solo, switchCameraPerspective, canSwitchCameraPerspective, endCall } =
-    useCallStore(
-      useShallow((state) => ({
-        solo: state.solo,
-        switchCameraPerspective: state.switchCameraPerspective,
-        canSwitchCameraPerspective: state.canSwitchCameraPerspective,
-        endCall: state.endCall,
-      })),
-    );
-  // const toggleMessages = useCallStore((state) => state.toggleMessages);
-  // const canSendMessage = useCallStore((state) => state.canSendMessage);
-  // const newMessage = useCallStore((state) => state.newMessage);
+  const {
+    solo,
+    switchCameraPerspective,
+    canSwitchCameraPerspective,
+    endCall,
+    toggleMessages,
+    canSendMessage,
+    newMessage,
+  } = useCallStore(
+    useShallow((state) => ({
+      solo: state.solo,
+      switchCameraPerspective: state.switchCameraPerspective,
+      canSwitchCameraPerspective: state.canSwitchCameraPerspective,
+      endCall: state.endCall,
+      toggleMessages: state.toggleMessages,
+      canSendMessage: state.canSendMessage,
+      newMessage: state.newMessage,
+    })),
+  );
 
   const onClickShare = () => {
     const shareData = {
@@ -101,13 +108,13 @@ export const CallButtons: FC = () => {
           <button
             name="Message"
             className="flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-[#008B8B] p-3 text-white active:bg-[#008B8B]/80 disabled:bg-gray-300"
-            // onClick={toggleMessages}
-            // disabled={!canSendMessage}
+            onClick={toggleMessages}
+            disabled={!canSendMessage}
           >
             <Icon icon="mdi:message" className="h-full w-full" />
-            {/* {newMessage && (
+            {newMessage && (
               <div className="fixed right-0 top-0 h-3 w-3 rounded-full border border-white bg-[#008B8B]"></div>
-            )} */}
+            )}
           </button>
         </div>
         <div
@@ -129,9 +136,9 @@ export const CallButtons: FC = () => {
               icon="material-symbols:more-horiz"
               className="h-full w-full"
             />
-            {/* {newMessage && (
+            {newMessage && (
               <div className="fixed right-0 top-0 h-3 w-3 rounded-full border border-white bg-[#008B8B]"></div>
-            )} */}
+            )}
           </button>
         </div>
         <button

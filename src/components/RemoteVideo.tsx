@@ -1,6 +1,5 @@
 import { FC, useEffect, useMemo, useRef } from "react";
 import { useCallStore } from "../state/call";
-// import { NetworkStatus } from "./NetworkStatus";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { useWindowDimensions } from "../hooks/useWindowDimensions";
 import { useShallow } from "zustand/shallow";
@@ -42,12 +41,11 @@ export const RemoteVideos = () => {
             className={`grid h-full w-full ${participants > 1 && "p-2"} gap-2 ${styles()}`}
           >
             {Object.entries(remoteStreams).map(([key, stream]) => {
-              return stream ? (
-                <RemoteVideo
-                  key={key}
-                  remoteStream={stream}
-                  connectionKey={key}
-                />
+              return stream && stream.active ? (
+                <div className="relative h-full w-full" key={key}>
+                  <RemoteVideo remoteStream={stream} />
+                  <NetworkStatus connectionKey={key} />
+                </div>
               ) : (
                 <LoadingSpinner
                   key={key}
@@ -64,9 +62,8 @@ export const RemoteVideos = () => {
 
 interface RemoteVideoProps {
   remoteStream: MediaStream;
-  connectionKey: string;
 }
-const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream, connectionKey }) => {
+const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     const remoteVideo = remoteVideoRef.current;
@@ -88,6 +85,7 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream, connectionKey }) => {
       // Clean up by pausing the video and removing the event listener
       return () => {
         if (remoteVideo) {
+          remoteVideo.pause();
           remoteVideo.removeEventListener("loadedmetadata", playVideo);
           remoteVideo.srcObject = null;
         }
@@ -95,14 +93,11 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream, connectionKey }) => {
     }
   }, [remoteStream]);
   return (
-    <div className="relative h-full w-full">
-      <video
-        ref={remoteVideoRef}
-        playsInline
-        autoPlay
-        className="h-full w-full rounded-md object-cover"
-      />
-      <NetworkStatus connectionKey={connectionKey} />
-    </div>
+    <video
+      ref={remoteVideoRef}
+      playsInline
+      autoPlay
+      className="h-full w-full rounded-md object-cover"
+    />
   );
 };

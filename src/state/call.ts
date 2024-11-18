@@ -30,7 +30,14 @@ type CameraPerspective = "environment" | "user";
 
 interface PeerConnection {
   peerConnection: RTCPeerConnection;
+  messageChannel: RTCDataChannel | null;
   subscription: () => void;
+}
+
+interface Message {
+  content: string;
+  timestamp: number;
+  sentByUser?: boolean;
 }
 
 interface Call {
@@ -66,6 +73,14 @@ interface Call {
     answer: RTCSessionDescriptionInit,
   ) => void;
   handleReconnection: (connectionKey: string) => Promise<void>;
+  messages: Message[];
+  addMessageChannel: (key: string, messageChannel: RTCDataChannel) => void;
+  receiveMessage: (event: MessageEvent) => void;
+  sendMessage: (content: string) => void;
+  canSendMessage: boolean;
+  showMessages: boolean;
+  newMessage: boolean;
+  toggleMessages: () => void;
   subscriptions: (() => void)[];
   endCall: () => Promise<void>;
   isAudioEnabled: boolean;
@@ -96,9 +111,6 @@ export const useCallStore = create<Call>((set, get) => ({
     set((state) =>
       produce(state, (draft) => {
         draft.remoteStreams[key] = stream;
-        if (draft.solo) {
-          draft.solo = false;
-        }
         return draft;
       }),
     );
@@ -108,9 +120,6 @@ export const useCallStore = create<Call>((set, get) => ({
       produce(state, (draft) => {
         draft.remoteStreams[key].getTracks().forEach((t) => t.stop());
         delete draft.remoteStreams[key];
-        if (Object.keys(draft.remoteStreams).length === 0) {
-          draft.solo = true;
-        }
         return draft;
       }),
     );
@@ -125,8 +134,12 @@ export const useCallStore = create<Call>((set, get) => ({
       produce(state, (draft) => {
         draft.peerConnections[key] = {
           peerConnection,
+          messageChannel: null,
           subscription,
         };
+        if (draft.solo) {
+          draft.solo = false;
+        }
         return draft;
       }),
     );
@@ -134,9 +147,15 @@ export const useCallStore = create<Call>((set, get) => ({
   deletePeerConnection: (key: string) => {
     set((state) =>
       produce(state, (draft) => {
+        draft.peerConnections[key].messageChannel?.close();
         draft.peerConnections[key].peerConnection.close();
         draft.peerConnections[key].subscription();
         delete draft.peerConnections[key];
+        if (Object.keys(draft.peerConnections).length === 0) {
+          draft.solo = true;
+          draft.canSendMessage = false;
+          draft.showMessages = false;
+        }
         return draft;
       }),
     );
@@ -310,12 +329,26 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   handleOffer: async (passphrase: string, connectionKey: string) => {
-    const { userStream, handleReconnection } = get();
+    const { userStream, handleReconnection, addMessageChannel } = get();
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
     userStream?.getTracks().forEach((track) => {
       newPeerConnection.addTrack(track, userStream);
     });
+
+    // try and setup a message channel
+    const messageChannel = newPeerConnection.createDataChannel("chat");
+    messageChannel.onopen = () => {
+      console.log("Message channel is open");
+      set(() => ({ canSendMessage: true }));
+    };
+    messageChannel.onclose = () => {
+      console.log("Message channel is closed");
+    };
+    messageChannel.onerror = (e) => {
+      console.log("something went wrong: ", e);
+    };
+    messageChannel.onmessage = get().receiveMessage;
 
     // Handle incoming tracks from remote peers
     newPeerConnection.ontrack = (event) => {
@@ -328,7 +361,12 @@ export const useCallStore = create<Call>((set, get) => ({
     newPeerConnection.oniceconnectionstatechange = async () => {
       const state = newPeerConnection.iceConnectionState;
       toast(state);
-      if (state === "failed" || state === "disconnected") {
+      if (
+        state === "failed" ||
+        state === "disconnected" ||
+        state === "closed" ||
+        state === "completed"
+      ) {
         handleReconnection(connectionKey);
       }
     };
@@ -362,6 +400,7 @@ export const useCallStore = create<Call>((set, get) => ({
 
     const { addPeerConnection } = get();
     addPeerConnection(connectionKey, newPeerConnection, iceCandidatesSub);
+    addMessageChannel(connectionKey, messageChannel);
   },
   waitForIceCandidatesOrTimeout: (connectionKey: string, timeout: number) => {
     return new Promise((resolve) => {
@@ -392,12 +431,32 @@ export const useCallStore = create<Call>((set, get) => ({
     connectionKey: string,
     offer: RTCSessionDescriptionInit,
   ) => {
-    const { userStream, handleReconnection } = get();
+    const { userStream, handleReconnection, addMessageChannel } = get();
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
     userStream?.getTracks().forEach((track) => {
       newPeerConnection.addTrack(track, userStream);
     });
+
+    // try and setup a message channel
+    newPeerConnection.ondatachannel = (channelEvent) => {
+      console.log({ channelEvent });
+      const messageChannel = channelEvent.channel;
+      messageChannel.onopen = () => {
+        console.log("Message channel is open");
+        set(() => ({ canSendMessage: true }));
+      };
+      messageChannel.onclose = () => {
+        console.log("Message channel is closed");
+        // set(() => ({ canSendMessage: false, showMessages: false }));
+      };
+      messageChannel.onerror = (e) => {
+        console.log("something went wrong: ", e);
+      };
+      messageChannel.onmessage = get().receiveMessage;
+
+      addMessageChannel(connectionKey, messageChannel);
+    };
 
     // Handle incoming tracks from remote peers
     newPeerConnection.ontrack = (event) => {
@@ -429,7 +488,6 @@ export const useCallStore = create<Call>((set, get) => ({
     // Handle ICE candidates
     newPeerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        console.log("answer adding candidate", event.candidate.toJSON());
         updateCallIceCandidates(
           passphrase,
           connectionKey,
@@ -441,7 +499,6 @@ export const useCallStore = create<Call>((set, get) => ({
 
     const handleIceCandidatesUpdates = (iceCandidate: RTCIceCandidate) => {
       if (iceCandidate) {
-        console.log("answer receiving candidate", iceCandidate.toJSON());
         newPeerConnection.addIceCandidate(iceCandidate);
       }
     };
@@ -477,6 +534,62 @@ export const useCallStore = create<Call>((set, get) => ({
     // reset offer
     // since the offer is dependent on the participants, we just have to update the user with just an empty object
     await updateParticipantDisconnections(passphrase, userId);
+  },
+  messages: [],
+  addMessageChannel: (key: string, messageChannel: RTCDataChannel) => {
+    set((state) =>
+      produce(state, (draft) => {
+        draft.peerConnections[key].messageChannel = messageChannel;
+        return draft;
+      }),
+    );
+  },
+  receiveMessage: (event: MessageEvent) => {
+    const { showMessages } = get();
+    const message = JSON.parse(event.data) as Message;
+    set((state) => ({
+      messages: [...state.messages, { ...message, sentByUser: false }],
+    }));
+    if (!showMessages) {
+      set(() => ({ newMessage: true }));
+      sounds.newMessageSound.play();
+    }
+  },
+  sendMessage: (content: string) => {
+    const { peerConnections } = get();
+    const now = Date.now();
+    const participantsCount = Object.keys(peerConnections).length;
+    let failures = 0;
+    try {
+      Object.keys(peerConnections).map((k) => {
+        const currentPeerConnection = peerConnections[k];
+        currentPeerConnection.messageChannel?.send(
+          JSON.stringify({ content, timestamp: now }),
+        );
+      });
+      set((state) => ({
+        messages: [
+          ...state.messages,
+          { content, timestamp: now, sentByUser: true },
+        ],
+      }));
+    } catch (e) {
+      failures++;
+      console.log("could not send message with err:", e);
+    }
+    if (failures) {
+      toasts.failedMessageDelivery(failures === participantsCount);
+    }
+  },
+  canSendMessage: false,
+  showMessages: false,
+  newMessage: false,
+  toggleMessages: () => {
+    const { showMessages, newMessage } = get();
+    if (!showMessages && newMessage) {
+      set(() => ({ newMessage: false }));
+    }
+    set(() => ({ showMessages: !showMessages }));
   },
   subscriptions: [],
   endCall: async () => {
