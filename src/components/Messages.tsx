@@ -205,11 +205,13 @@ const Message: FC<MessageProps> = ({
         sentByUser
           ? "ml-10 self-end rounded-bl-lg rounded-tl-lg rounded-tr-lg border border-[#008B8B]/80 bg-[#008B8B]/70"
           : "mr-10 rounded-br-lg rounded-tl-lg rounded-tr-lg border border-gray-400 bg-gray-300"
-      } ${first && "mt-auto"} w-fit p-1`}
+      } ${first && "mt-auto"} w-fit`}
     >
-      {username && <p className="font-semibold leading-none">{username}</p>}
-      <span className="leading-tight">{content}</span>
-      <p className="text-end text-[10px] leading-tight opacity-50">
+      <div className="py-1 pl-2 pr-4">
+        {username && <p className="font-semibold leading-none">{username}</p>}
+        <span className="text-balance leading-tight">{content}</span>
+      </div>
+      <p className="mb-1 mr-1 text-end text-[10px] leading-tight opacity-50">
         {new Date(timestamp).toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
