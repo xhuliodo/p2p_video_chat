@@ -3,26 +3,19 @@ import { v7 } from "uuid";
 import { router } from "../routes";
 // import { sounds } from "../notifications/sounds";
 import { toasts } from "../notifications/toasts";
-import {
-  addParticipant,
-  Connection,
-  createCall,
-  deleteCallByPassphrase,
-  deleteCallConnection,
-  deleteParticipant,
-  getCallByPassphrase,
-  getCallParticipantsByPassphrase,
-  Participant,
-  subscribeToConnectionUpdates,
-  subscribeToIceCandidatesUpdates,
-  subscribeToParticipantsUpdates,
-  updateCallAnswer,
-  updateCallConnectionStatus,
-  updateCallIceCandidates,
-  updateCallOffer,
-  updateParticipantDisconnections,
-} from "../firebase/firebase";
 import { sounds } from "../notifications/sounds";
+import {
+  newAnswerEvent,
+  newIceCandidateEvent,
+  newNewParticipantEvent,
+  newOfferEvent,
+  OutAnswer,
+  OutIceCandidate,
+  OutNewParticipant,
+  OutOffer,
+  OutParticipantLeft,
+  WSEvent,
+} from "./events";
 import { toast } from "react-toastify";
 import { produce } from "immer";
 
@@ -31,7 +24,6 @@ type CameraPerspective = "environment" | "user";
 interface PeerConnection {
   peerConnection: RTCPeerConnection;
   messageChannel: RTCDataChannel | null;
-  subscription: () => void;
 }
 
 export interface Message {
@@ -47,32 +39,33 @@ interface Call {
   solo: boolean;
   passphrase: string;
   isCreator: boolean;
+  conn: WebSocket | null;
   userStream: MediaStream | null;
   remoteStreams: Record<string, MediaStream>;
   addRemoteStream: (key: string, stream: MediaStream) => void;
   deleteRemoteStream: (key: string) => void;
   peerConnections: Record<string, PeerConnection>;
-  addPeerConnection: (
-    key: string,
-    peerConnection: RTCPeerConnection,
-    subscriptions: () => void,
-  ) => void;
+  addPeerConnection: (key: string, peerConnection: RTCPeerConnection) => void;
   deletePeerConnection: (key: string) => void;
   startCall: (passphrase: string) => Promise<void>;
-  handleOffer: (passphrase: string, connectionKey: string) => Promise<void>;
+  handleOffer: (participantId: string) => Promise<void>;
   waitForIceCandidatesOrTimeout: (
-    connectionKey: string,
+    participantId: string,
     timeout: number,
   ) => Promise<string>;
   handleAnswer: (
-    passphrase: string,
-    connectionKey: string,
+    participantId: string,
     offer: RTCSessionDescriptionInit,
   ) => Promise<void>;
   handleAnswerResponse: (
-    connectionKey: string,
+    participantId: string,
     answer: RTCSessionDescriptionInit,
   ) => void;
+  handleIceCandidates: (
+    participantId: string,
+    iceCandidate: RTCIceCandidate,
+  ) => void;
+  handleParticipantLeft: (participantId: string) => void;
   handleReconnection: (connectionKey: string) => Promise<void>;
   username: string;
   setUsername: (username: string) => void;
@@ -109,6 +102,7 @@ export const useCallStore = create<Call>((set, get) => ({
   solo: true,
   passphrase: "",
   isCreator: false,
+  conn: null,
   userStream: null,
   remoteStreams: {},
   addRemoteStream: (key: string, stream: MediaStream) => {
@@ -122,24 +116,21 @@ export const useCallStore = create<Call>((set, get) => ({
   deleteRemoteStream: (key: string) => {
     set((state) =>
       produce(state, (draft) => {
-        draft.remoteStreams[key].getTracks().forEach((t) => t.stop());
-        delete draft.remoteStreams[key];
+        if (draft.remoteStreams[key]) {
+          draft.remoteStreams[key].getTracks().forEach((t) => t.stop());
+          delete draft.remoteStreams[key];
+        }
         return draft;
       }),
     );
   },
   peerConnections: {},
-  addPeerConnection: (
-    key: string,
-    peerConnection: RTCPeerConnection,
-    subscription: () => void,
-  ) => {
+  addPeerConnection: (key: string, peerConnection: RTCPeerConnection) => {
     set((state) =>
       produce(state, (draft) => {
         draft.peerConnections[key] = {
           peerConnection,
           messageChannel: null,
-          subscription,
         };
         if (draft.solo) {
           draft.solo = false;
@@ -151,10 +142,12 @@ export const useCallStore = create<Call>((set, get) => ({
   deletePeerConnection: (key: string) => {
     set((state) =>
       produce(state, (draft) => {
-        draft.peerConnections[key].messageChannel?.close();
-        draft.peerConnections[key].peerConnection.close();
-        draft.peerConnections[key].subscription();
-        delete draft.peerConnections[key];
+        if (draft.peerConnections[key]) {
+          draft.peerConnections[key].messageChannel?.close();
+          draft.peerConnections[key].peerConnection.close();
+          delete draft.peerConnections[key];
+        }
+
         if (Object.keys(draft.peerConnections).length === 0) {
           draft.solo = true;
           draft.canSendMessage = false;
@@ -170,10 +163,11 @@ export const useCallStore = create<Call>((set, get) => ({
       isCameraEnabled,
       cameraPerspective,
       userId,
-      waitForIceCandidatesOrTimeout,
       handleAnswer,
       handleOffer,
       handleAnswerResponse,
+      handleIceCandidates,
+      handleParticipantLeft,
     } = get();
     let stream;
     try {
@@ -190,150 +184,72 @@ export const useCallStore = create<Call>((set, get) => ({
       });
       return;
     }
-    set(() => ({ userStream: stream, passphrase }));
 
-    const foundCall = await getCallByPassphrase(passphrase);
-    if (!foundCall) {
-      await createCall(passphrase);
-    }
-
-    if (
-      foundCall?.participants &&
-      Object.keys(foundCall.participants).length > 5
-    ) {
+    if (!window["WebSocket"]) {
       router.navigate("/", {
-        state: { message: "Room is full!" },
+        state: { message: "Your browser does not support websockets!" },
       });
       return;
     }
 
-    // add event listener for when a new participant gets on call and see if you are
-    // the one supposed to make an offer
-    const handleParticipantsUpdates = async (
-      participants: Record<string, Participant>,
-    ) => {
-      const { userId, peerConnections } = get();
-      for (const participantId of Object.keys(participants)) {
-        // skip yoself
-        if (participantId === userId) {
-          continue;
-        }
-
-        const connectionKey = getConnectionKey(userId, participantId);
-        // you have already established a connection with this participant
-        if (peerConnections[connectionKey]) {
-          continue;
-        }
-        console.log("a new participant has joined the call");
-
-        const isOfferer = getIsOfferer(userId, participantId);
-        if (isOfferer) {
-          console.log("you are making them an offer");
-          await handleOffer(passphrase, connectionKey);
-          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
-          console.log(res);
-          continue;
-        }
-
-        console.log("you are waiting for their offer");
-      }
-    };
-    const participantsSub = subscribeToParticipantsUpdates(
-      passphrase,
-      handleParticipantsUpdates,
+    const newWebsocketConnection = new WebSocket(
+      "wss://" + import.meta.env.VITE_WEBSOCKET_URL + "/calls/" + passphrase,
     );
 
-    // add yourself in the participants list, and at the same time create the call if it does not exists
-    await addParticipant(passphrase, userId);
+    newWebsocketConnection.onerror = (e) => {
+      console.log("WebSocket error: ", e);
+    };
 
-    // add event listener for when an offer has been made to you
-    // this functions handles the cases:
-    // when an offer has been made
-    // when an answer has been made
-    const handleConnectionUpdates = async (
-      connections: Record<string, Connection>,
-    ) => {
-      const {
-        userId,
-        peerConnections,
-        deletePeerConnection,
-        deleteRemoteStream,
-      } = get();
-      for (const connectionKey of Object.keys(connections)) {
-        // skip connections you are not a part in
-        if (!connectionKey.includes(userId)) {
-          console.log("no need to take any action for this connection");
-          continue;
+    newWebsocketConnection.onopen = () => {
+      const e = newNewParticipantEvent(userId);
+      newWebsocketConnection.send(e);
+    };
+    newWebsocketConnection.onmessage = async (e) => {
+      const event: WSEvent = JSON.parse(e.data);
+      switch (event.type) {
+        case "new_participant": {
+          const eventData = event.payload as OutNewParticipant;
+          handleOffer(eventData.participantId);
+          break;
         }
-
-        const currentConnection = connections[connectionKey];
-        // clean up deleted connections if not already
-        if (currentConnection.deleted && peerConnections[connectionKey]) {
-          console.log("cleaning up deleted connections");
-          deletePeerConnection(connectionKey);
-          deleteRemoteStream(connectionKey);
-          continue;
+        case "offer": {
+          const eventData = event.payload as OutOffer;
+          const offer = JSON.parse(eventData.offer);
+          handleAnswer(eventData.from, offer);
+          break;
         }
-
-        // skip connections you have already handled
-        if (currentConnection.done) {
-          console.log(
-            "connection established, no need to consider further updates",
-          );
-          continue;
+        case "answer": {
+          const eventData = event.payload as OutAnswer;
+          const answer = JSON.parse(eventData.answer);
+          handleAnswerResponse(eventData.from, answer);
+          break;
         }
-
-        const isOfferer = getIsOffererFromConnectionKey(userId, connectionKey);
-        // handle the update as the offerer
-        if (isOfferer) {
-          if (!currentConnection.answer) {
-            console.log("no answer for the offer yet");
-            continue;
-          }
-          if (
-            peerConnections[connectionKey] &&
-            peerConnections[connectionKey].peerConnection.remoteDescription
-          ) {
-            console.log("already handled this response");
-            continue;
-          }
-
-          console.log("got an answer to the offer made");
-          handleAnswerResponse(connectionKey, currentConnection.answer);
-          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
-          console.log(res);
-          await updateCallConnectionStatus(passphrase, connectionKey);
-
-          continue;
-          // handle the update as the answerer
-        } else {
-          if (currentConnection.answer) {
-            console.log("already answered this offer");
-            continue;
-          }
-
-          console.log("got a new offer");
-          await handleAnswer(
-            passphrase,
-            connectionKey,
-            currentConnection.offer,
-          );
-          const res = await waitForIceCandidatesOrTimeout(connectionKey, 10000);
-          console.log(res);
+        case "ice_candidate": {
+          const eventData = event.payload as OutIceCandidate;
+          const iceCandidateJson = JSON.parse(eventData.iceCandidate);
+          const iceCandidate = new RTCIceCandidate(iceCandidateJson);
+          handleIceCandidates(eventData.from, iceCandidate);
+          break;
+        }
+        case "participant_left": {
+          const eventData = event.payload as OutParticipantLeft;
+          handleParticipantLeft(eventData.participantId);
+          break;
         }
       }
     };
-    const connectionSub = subscribeToConnectionUpdates(
-      passphrase,
-      handleConnectionUpdates,
-    );
 
-    set((state) => ({
-      subscriptions: [...state.subscriptions, participantsSub, connectionSub],
+    set(() => ({
+      userStream: stream,
+      passphrase,
+      conn: newWebsocketConnection,
     }));
   },
-  handleOffer: async (passphrase: string, connectionKey: string) => {
-    const { userStream, handleReconnection, addMessageChannel } = get();
+  handleOffer: async (participantId: string) => {
+    const { userStream, addMessageChannel, conn, userId, handleReconnection } =
+      get();
+    const connectionKey = getConnectionKey(userId, participantId);
+
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
     userStream?.getTracks().forEach((track) => {
@@ -371,44 +287,36 @@ export const useCallStore = create<Call>((set, get) => ({
         state === "closed" ||
         state === "completed"
       ) {
-        handleReconnection(connectionKey);
+        handleReconnection(participantId);
       }
     };
 
     // Create an offer to connect to the remote peer
     const offer = await newPeerConnection.createOffer({ iceRestart: false });
     await newPeerConnection.setLocalDescription(offer);
-    await updateCallOffer(passphrase, connectionKey, offer);
+    const e = newOfferEvent(JSON.stringify(offer), participantId);
+    conn?.send(e);
 
     // Handle ICE candidates
     newPeerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        updateCallIceCandidates(
-          passphrase,
-          connectionKey,
-          true,
-          event.candidate,
-        );
+        const c = JSON.stringify(event.candidate.toJSON());
+        const e = newIceCandidateEvent(c, participantId);
+        conn?.send(e);
       }
     };
 
-    const handleIceCandidatesUpdates = (iceCandidate: RTCIceCandidate) => {
-      if (iceCandidate) newPeerConnection.addIceCandidate(iceCandidate);
-    };
-    const iceCandidatesSub = subscribeToIceCandidatesUpdates(
-      passphrase,
-      connectionKey,
-      false,
-      handleIceCandidatesUpdates,
-    );
-
     const { addPeerConnection } = get();
-    addPeerConnection(connectionKey, newPeerConnection, iceCandidatesSub);
+    addPeerConnection(connectionKey, newPeerConnection);
     addMessageChannel(connectionKey, messageChannel);
   },
-  waitForIceCandidatesOrTimeout: (connectionKey: string, timeout: number) => {
+  waitForIceCandidatesOrTimeout: (to: string, timeout: number) => {
+    const { userId } = get();
+    const connectionKey = getConnectionKey(userId, to);
+
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
+        console.log("Timeout reached");
         resolve("Timeout reached");
       }, timeout);
 
@@ -419,6 +327,7 @@ export const useCallStore = create<Call>((set, get) => ({
           "complete"
         ) {
           clearTimeout(timeoutId);
+          console.log("Ice candidates gathered");
           resolve("Ice candidates gathered");
         } else {
           // Continue checking every 100ms until the condition is met
@@ -431,11 +340,23 @@ export const useCallStore = create<Call>((set, get) => ({
     });
   },
   handleAnswer: async (
-    passphrase: string,
-    connectionKey: string,
+    participantId: string,
     offer: RTCSessionDescriptionInit,
   ) => {
-    const { userStream, handleReconnection, addMessageChannel } = get();
+    const {
+      userStream,
+      addMessageChannel,
+      userId,
+      conn,
+      handleReconnection,
+      peerConnections,
+    } = get();
+    const connectionKey = getConnectionKey(userId, participantId);
+    // clean up for the reconnections, in case one of the peers has yet to delete their old connection
+    if (peerConnections[connectionKey]) {
+      handleReconnection(participantId);
+    }
+
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
     userStream?.getTracks().forEach((track) => {
@@ -480,64 +401,59 @@ export const useCallStore = create<Call>((set, get) => ({
         state === "closed" ||
         state === "completed"
       ) {
-        handleReconnection(connectionKey);
+        handleReconnection(participantId);
       }
     };
 
     await newPeerConnection.setRemoteDescription(offer);
     const answer = await newPeerConnection.createAnswer();
     await newPeerConnection.setLocalDescription(answer);
-    await updateCallAnswer(passphrase, connectionKey, answer);
+    const e = newAnswerEvent(JSON.stringify(answer), participantId);
+    conn?.send(e);
 
     // Handle ICE candidates
     newPeerConnection.onicecandidate = async (event) => {
       if (event.candidate) {
-        updateCallIceCandidates(
-          passphrase,
-          connectionKey,
-          false,
-          event.candidate,
-        );
+        const c = JSON.stringify(event.candidate.toJSON());
+        const e = newIceCandidateEvent(c, participantId);
+        conn?.send(e);
       }
     };
-
-    const handleIceCandidatesUpdates = (iceCandidate: RTCIceCandidate) => {
-      if (iceCandidate) {
-        newPeerConnection.addIceCandidate(iceCandidate);
-      }
-    };
-    const iceCandidatesSub = subscribeToIceCandidatesUpdates(
-      passphrase,
-      connectionKey,
-      true,
-      handleIceCandidatesUpdates,
-    );
 
     const { addPeerConnection } = get();
-    addPeerConnection(connectionKey, newPeerConnection, iceCandidatesSub);
+    addPeerConnection(connectionKey, newPeerConnection);
   },
   handleAnswerResponse: (
-    connectionKey: string,
+    participantId: string,
     answer: RTCSessionDescriptionInit,
   ) => {
-    const { peerConnections } = get();
+    const { peerConnections, userId } = get();
+    const connectionKey = getConnectionKey(userId, participantId);
     peerConnections[connectionKey].peerConnection.setRemoteDescription(answer);
   },
-  handleReconnection: async (connectionKey: string) => {
-    const { deleteRemoteStream, deletePeerConnection, passphrase, userId } =
-      get();
-    deletePeerConnection(connectionKey);
+  handleIceCandidates: (
+    participantId: string,
+    iceCandidate: RTCIceCandidate,
+  ) => {
+    const { userId, peerConnections } = get();
+    const connectionKey = getConnectionKey(userId, participantId);
+    peerConnections[connectionKey].peerConnection.addIceCandidate(iceCandidate);
+  },
+  handleParticipantLeft: (participantId: string) => {
+    const { userId, deletePeerConnection, deleteRemoteStream } = get();
+    const connectionKey = getConnectionKey(userId, participantId);
     deleteRemoteStream(connectionKey);
-    // reset answer
-    // since the answer in dependent on the connections, we just delete the connection
-    try {
-      await deleteCallConnection(passphrase, connectionKey);
-    } catch (e) {
-      console.log("could not delete call connection with err: ", e);
+    deletePeerConnection(connectionKey);
+  },
+  handleReconnection: async (participantId: string) => {
+    const { handleParticipantLeft, userId, handleOffer } = get();
+    handleParticipantLeft(participantId);
+
+    const isOfferer = getIsOfferer(userId, participantId);
+    if (isOfferer) {
+      console.log("sending offer again");
+      handleOffer(participantId);
     }
-    // reset offer
-    // since the offer is dependent on the participants, we just have to update the user with just an empty object
-    await updateParticipantDisconnections(passphrase, userId);
   },
   username: localStorage.getItem("username") || "",
   setUsername: (username: string) => {
@@ -609,31 +525,21 @@ export const useCallStore = create<Call>((set, get) => ({
     sounds.callEndedSound.play();
 
     const {
-      remoteStreams,
       deleteRemoteStream,
       peerConnections,
       deletePeerConnection,
-      passphrase,
-      userId,
+      conn,
       subscriptions,
     } = get();
 
     subscriptions.forEach((s) => s());
-    Object.keys(remoteStreams).forEach((rsKey) => deleteRemoteStream(rsKey));
-    Object.keys(peerConnections).forEach((pcKey) =>
-      deletePeerConnection(pcKey),
-    );
+    Object.keys(peerConnections).forEach((pcKey) => {
+      deleteRemoteStream(pcKey);
+      deletePeerConnection(pcKey);
+    });
 
-    const participants = await getCallParticipantsByPassphrase(passphrase);
-    if (Object.keys(participants).length <= 1) {
-      console.log("deleted call as last participant");
-      await deleteCallByPassphrase(passphrase);
-    } else {
-      console.log("removing myself as a participant");
-      await deleteParticipant(passphrase, userId);
-    }
-
-    set(() => ({ passphrase: v7() }));
+    conn?.close();
+    set(() => ({ passphrase: v7(), conn: null }));
   },
   isAudioEnabled: true,
   switchAudio: async () => {
@@ -721,23 +627,29 @@ const getUserStream = async (
   video: boolean,
   perspective: "environment" | "user",
 ) => {
-  return navigator.mediaDevices.getUserMedia({
-    audio: audio
-      ? {
-          ...(audioDeviceId ? { deviceId: audioDeviceId } : {}),
-          noiseSuppression: true,
-          autoGainControl: true,
-          echoCancellation: true,
-        }
-      : audio,
-    video: video
-      ? {
-          width: { min: 640, ideal: 1280, max: 1920 },
-          height: { min: 360, ideal: 720, max: 1080 },
-          facingMode: perspective,
-        }
-      : video,
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      ...(audioDeviceId ? { deviceId: audioDeviceId } : {}),
+      noiseSuppression: true,
+      autoGainControl: true,
+      echoCancellation: true,
+    },
+    video: {
+      width: { min: 640, ideal: 1280, max: 1920 },
+      height: { min: 360, ideal: 720, max: 1080 },
+      facingMode: perspective,
+    },
   });
+
+  if (!audio) {
+    stream.getAudioTracks().forEach((a) => (a.enabled = false));
+  }
+
+  if (!video) {
+    stream.getVideoTracks().forEach((v) => (v.enabled = false));
+  }
+
+  return stream;
 };
 
 const checkForBluetoothAudioDevices = async (
@@ -811,23 +723,6 @@ const getIsOfferer = (id: string, otherId: string): boolean => {
   // connection keys will also be created with the older id being first
   // note: "older" means older in time.
   if (id < otherId) {
-    return true;
-  }
-
-  return false;
-};
-
-const getIsOffererFromConnectionKey = (
-  id: string,
-  connectionKey: string,
-): boolean => {
-  const ids = connectionKey.split("_");
-  if (!ids.length) {
-    console.log("bad connection key");
-    return false;
-  }
-
-  if (ids[0] === id) {
     return true;
   }
 

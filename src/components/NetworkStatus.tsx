@@ -34,7 +34,7 @@ export const NetworkStatus: FC<NetworkStatusProps> = ({ connectionKey }) => {
 
       stats.forEach((report) => {
         // Analyze inbound-rtp stats for packet loss and jitter
-        if (report.type === "inbound-rtp" && report.kind === "video") {
+        if (report.type === "inbound-rtp") {
           if (report.packetsReceived > 0) {
             packetLossRate =
               (report.packetsLost / report.packetsReceived) * 100;
