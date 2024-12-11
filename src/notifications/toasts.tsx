@@ -17,4 +17,7 @@ export const toasts = {
         : "some " + "of your buddies, please try again.",
     );
   },
+  somethingWentWrong: ()=>{
+    toast("Something went wrong, you might want to refresh the page.")
+  }
 };
