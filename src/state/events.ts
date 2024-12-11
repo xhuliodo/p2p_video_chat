@@ -10,7 +10,7 @@ export interface WSEvent {
   payload: unknown;
 }
 
-export interface OutNewParticipant {
+export interface NewParticipantResponse {
   participantId: string;
 }
 
@@ -25,12 +25,12 @@ export const newNewParticipantEvent = (userId: string): string => {
   return JSON.stringify(e);
 };
 
-export interface OutOffer {
+export interface OfferResponse {
   offer: string;
   from: string;
 }
 
-export interface OutParticipantLeft {
+export interface ParticipantLeftResponse {
   participantId: string;
 }
 
@@ -43,7 +43,7 @@ export const participantLeftEvent = (): string => {
   return JSON.stringify(e);
 };
 
-export interface OutOffer {
+export interface OfferResponse {
   offer: string;
   from: string;
 }
@@ -59,7 +59,7 @@ export const newOfferEvent = (offer: string, to: string): string => {
   return JSON.stringify(e);
 };
 
-export interface OutIceCandidate {
+export interface IceCandidateResponse {
   iceCandidate: string;
   from: string;
 }
@@ -79,7 +79,7 @@ export const newIceCandidateEvent = (
   return JSON.stringify(e);
 };
 
-export interface OutAnswer {
+export interface AnswerResponse {
   answer: string;
   from: string;
 }

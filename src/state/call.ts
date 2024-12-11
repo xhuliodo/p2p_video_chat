@@ -9,11 +9,11 @@ import {
   newIceCandidateEvent,
   newNewParticipantEvent,
   newOfferEvent,
-  OutAnswer,
-  OutIceCandidate,
-  OutNewParticipant,
-  OutOffer,
-  OutParticipantLeft,
+  AnswerResponse,
+  IceCandidateResponse,
+  NewParticipantResponse,
+  OfferResponse,
+  ParticipantLeftResponse,
   WSEvent,
 } from "./events";
 import { toast } from "react-toastify";
@@ -38,7 +38,6 @@ interface Call {
   userId: string;
   solo: boolean;
   passphrase: string;
-  isCreator: boolean;
   conn: WebSocket | null;
   userStream: MediaStream | null;
   remoteStreams: Record<string, MediaStream>;
@@ -60,12 +59,12 @@ interface Call {
   handleAnswerResponse: (
     participantId: string,
     answer: RTCSessionDescriptionInit,
-  ) => void;
+  ) => Promise<void>;
   handleIceCandidates: (
     participantId: string,
     iceCandidate: RTCIceCandidate,
-  ) => void;
-  handleParticipantLeft: (participantId: string) => void;
+  ) => Promise<void>;
+  handleParticipantLeft: (participantId: string) => Promise<void>;
   handleReconnection: (connectionKey: string) => Promise<void>;
   username: string;
   setUsername: (username: string) => void;
@@ -101,7 +100,6 @@ export const useCallStore = create<Call>((set, get) => ({
   userId: v7(),
   solo: true,
   passphrase: "",
-  isCreator: false,
   conn: null,
   userStream: null,
   remoteStreams: {},
@@ -214,31 +212,31 @@ export const useCallStore = create<Call>((set, get) => ({
       const event: WSEvent = JSON.parse(e.data);
       switch (event.type) {
         case "new_participant": {
-          const eventData = event.payload as OutNewParticipant;
+          const eventData = event.payload as NewParticipantResponse;
           handleOffer(eventData.participantId);
           break;
         }
         case "offer": {
-          const eventData = event.payload as OutOffer;
+          const eventData = event.payload as OfferResponse;
           const offer = JSON.parse(eventData.offer);
           handleAnswer(eventData.from, offer);
           break;
         }
         case "answer": {
-          const eventData = event.payload as OutAnswer;
+          const eventData = event.payload as AnswerResponse;
           const answer = JSON.parse(eventData.answer);
           handleAnswerResponse(eventData.from, answer);
           break;
         }
         case "ice_candidate": {
-          const eventData = event.payload as OutIceCandidate;
+          const eventData = event.payload as IceCandidateResponse;
           const iceCandidateJson = JSON.parse(eventData.iceCandidate);
           const iceCandidate = new RTCIceCandidate(iceCandidateJson);
           handleIceCandidates(eventData.from, iceCandidate);
           break;
         }
         case "participant_left": {
-          const eventData = event.payload as OutParticipantLeft;
+          const eventData = event.payload as ParticipantLeftResponse;
           handleParticipantLeft(eventData.participantId);
           break;
         }
@@ -429,7 +427,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const { addPeerConnection } = get();
     addPeerConnection(connectionKey, newPeerConnection);
   },
-  handleAnswerResponse: (
+  handleAnswerResponse: async (
     participantId: string,
     answer: RTCSessionDescriptionInit,
   ) => {
@@ -437,7 +435,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const connectionKey = getConnectionKey(userId, participantId);
     peerConnections[connectionKey].peerConnection.setRemoteDescription(answer);
   },
-  handleIceCandidates: (
+  handleIceCandidates: async (
     participantId: string,
     iceCandidate: RTCIceCandidate,
   ) => {
@@ -445,7 +443,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const connectionKey = getConnectionKey(userId, participantId);
     peerConnections[connectionKey].peerConnection.addIceCandidate(iceCandidate);
   },
-  handleParticipantLeft: (participantId: string) => {
+  handleParticipantLeft: async (participantId: string) => {
     const { userId, deletePeerConnection, deleteRemoteStream } = get();
     const connectionKey = getConnectionKey(userId, participantId);
     deleteRemoteStream(connectionKey);
