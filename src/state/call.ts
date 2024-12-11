@@ -196,6 +196,12 @@ export const useCallStore = create<Call>((set, get) => ({
       "wss://" + import.meta.env.VITE_WEBSOCKET_URL + "/calls/" + passphrase,
     );
 
+    newWebsocketConnection.onclose = (e) => {
+      if (!e.wasClean) {
+        toasts.somethingWentWrong();
+      }
+    };
+
     newWebsocketConnection.onerror = (e) => {
       console.log("WebSocket error: ", e);
     };
