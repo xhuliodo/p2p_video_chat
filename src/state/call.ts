@@ -557,10 +557,35 @@ export const useCallStore = create<Call>((set, get) => ({
   isCameraEnabled: true,
   cameraPerspective: "user",
   switchCamera: async () => {
-    const { userStream, isCameraEnabled } = get();
+    const { userStream, isCameraEnabled, peerConnections } = get();
     userStream?.getVideoTracks().forEach((track) => {
       track.enabled = !isCameraEnabled;
     });
+
+    // go through all the peer connections and set the video bitrate to 
+    // 0, this way no video data is sent at all. By default if disabled
+    // webrtc still keeps sending black frames to the peer. More about
+    // this at: https://developer.mozilla.org/en-US/docs/Web/API/MediaStreamTrack/enabled
+    for (const k of Object.keys(peerConnections)) {
+      const sender = peerConnections[k].peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === "video");
+
+      if (sender) {
+        const parameters = sender.getParameters();
+        if (!parameters.encodings) {
+          parameters.encodings = [{}];
+        }
+
+        if (isCameraEnabled) {
+          delete parameters.encodings[0].maxBitrate;
+        } else {
+          parameters.encodings[0].maxBitrate = 0; // Disable bandwidth usage
+        }
+
+        sender.setParameters(parameters);
+      }
+    }
 
     set(() => ({ isCameraEnabled: !isCameraEnabled }));
   },
