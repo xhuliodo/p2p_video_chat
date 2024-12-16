@@ -3,7 +3,8 @@ export type EventType =
   | "participant_left"
   | "offer"
   | "answer"
-  | "ice_candidate";
+  | "ice_candidate"
+  | "data_mode";
 
 export interface WSEvent {
   type: EventType;
@@ -45,14 +46,20 @@ export const participantLeftEvent = (): string => {
 
 export interface OfferResponse {
   offer: string;
+  dataMode: boolean;
   from: string;
 }
 
-export const newOfferEvent = (offer: string, to: string): string => {
+export const newOfferEvent = (
+  offer: string,
+  dataMode: boolean,
+  to: string,
+): string => {
   const e: WSEvent = {
     type: "offer",
     payload: {
       offer,
+      dataMode,
       to,
     },
   };
@@ -90,6 +97,21 @@ export const newAnswerEvent = (answer: string, to: string): string => {
     payload: {
       answer,
       to,
+    },
+  };
+
+  return JSON.stringify(e);
+};
+
+export interface DataModeResponse {
+  isLowDataMode: boolean;
+}
+
+export const newDataModeEvent = (dataMode: boolean): string => {
+  const e: WSEvent = {
+    type: "data_mode",
+    payload: {
+      isLowDataMode: dataMode,
     },
   };
 

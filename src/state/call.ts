@@ -15,6 +15,8 @@ import {
   OfferResponse,
   ParticipantLeftResponse,
   WSEvent,
+  newDataModeEvent,
+  DataModeResponse,
 } from "./events";
 import { toast } from "react-toastify";
 import { produce } from "immer";
@@ -39,6 +41,9 @@ interface Call {
   solo: boolean;
   passphrase: string;
   conn: WebSocket | null;
+  lowDataMode: boolean;
+  switchDataMode: () => void;
+  handleDataMode: (dataMode: boolean, initiator: boolean) => Promise<void>;
   userStream: MediaStream | null;
   remoteStreams: Record<string, MediaStream>;
   addRemoteStream: (key: string, stream: MediaStream) => void;
@@ -55,6 +60,7 @@ interface Call {
   handleAnswer: (
     participantId: string,
     offer: RTCSessionDescriptionInit,
+    dataMode: boolean,
   ) => Promise<void>;
   handleAnswerResponse: (
     participantId: string,
@@ -91,7 +97,7 @@ interface Call {
 
 export const useCallStore = create<Call>((set, get) => ({
   test: async (howMany: number) => {
-    const stream = await getUserStream(false, "", true, "user");
+    const stream = await getUserStream(false, "", true, "user", false);
     set({ solo: false, userStream: stream });
     for (let i = 0; i < howMany; i++) {
       get().addRemoteStream(`${i}`, stream);
@@ -101,6 +107,54 @@ export const useCallStore = create<Call>((set, get) => ({
   solo: true,
   passphrase: "",
   conn: null,
+  lowDataMode: false,
+  switchDataMode: async () => {
+    const { lowDataMode, handleDataMode } = get();
+    handleDataMode(!lowDataMode, true);
+    set(() => ({ lowDataMode: !lowDataMode }));
+  },
+  handleDataMode: async (dataMode: boolean, initiator: boolean) => {
+    const {
+      isCameraEnabled,
+      cameraPerspective,
+      userStream,
+      peerConnections,
+      conn,
+    } = get();
+
+    const stream = await getUserStream(
+      true,
+      "",
+      isCameraEnabled,
+      cameraPerspective,
+      dataMode,
+    );
+
+    const videoTrack = userStream?.getVideoTracks()[0];
+    videoTrack?.stop();
+    if (videoTrack) {
+      userStream.removeTrack(videoTrack);
+    }
+
+    const newVideoTrack = stream.getVideoTracks()[0];
+    userStream?.addTrack(newVideoTrack);
+
+    for (const k of Object.keys(peerConnections)) {
+      const sender = peerConnections[k].peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === "video");
+      sender?.replaceTrack(newVideoTrack);
+    }
+
+    if (initiator) {
+      const dataModeEvent = newDataModeEvent(dataMode);
+      conn?.send(dataModeEvent);
+    } else {
+      set(() => ({ lowDataMode: dataMode }));
+    }
+
+    toasts.lowDataMode(dataMode);
+  },
   userStream: null,
   remoteStreams: {},
   addRemoteStream: (key: string, stream: MediaStream) => {
@@ -166,6 +220,8 @@ export const useCallStore = create<Call>((set, get) => ({
       handleAnswerResponse,
       handleIceCandidates,
       handleParticipantLeft,
+      lowDataMode,
+      handleDataMode,
     } = get();
     let stream;
     try {
@@ -174,6 +230,7 @@ export const useCallStore = create<Call>((set, get) => ({
         "",
         isCameraEnabled,
         cameraPerspective,
+        lowDataMode,
       );
       stream = await checkForBluetoothAudioDevices(stream);
     } catch {
@@ -219,7 +276,7 @@ export const useCallStore = create<Call>((set, get) => ({
         case "offer": {
           const eventData = event.payload as OfferResponse;
           const offer = JSON.parse(eventData.offer);
-          handleAnswer(eventData.from, offer);
+          handleAnswer(eventData.from, offer, eventData.dataMode);
           break;
         }
         case "answer": {
@@ -240,6 +297,11 @@ export const useCallStore = create<Call>((set, get) => ({
           handleParticipantLeft(eventData.participantId);
           break;
         }
+        case "data_mode": {
+          const eventData = event.payload as DataModeResponse;
+          handleDataMode(eventData.isLowDataMode, false);
+          break;
+        }
       }
     };
 
@@ -250,8 +312,14 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
   handleOffer: async (participantId: string) => {
-    const { userStream, addMessageChannel, conn, userId, handleReconnection } =
-      get();
+    const {
+      userStream,
+      addMessageChannel,
+      conn,
+      userId,
+      handleReconnection,
+      lowDataMode,
+    } = get();
     const connectionKey = getConnectionKey(userId, participantId);
 
     const newPeerConnection = await getPeerConnection();
@@ -298,7 +366,7 @@ export const useCallStore = create<Call>((set, get) => ({
     // Create an offer to connect to the remote peer
     const offer = await newPeerConnection.createOffer({ iceRestart: false });
     await newPeerConnection.setLocalDescription(offer);
-    const e = newOfferEvent(JSON.stringify(offer), participantId);
+    const e = newOfferEvent(JSON.stringify(offer), lowDataMode, participantId);
     conn?.send(e);
 
     // Handle ICE candidates
@@ -331,7 +399,6 @@ export const useCallStore = create<Call>((set, get) => ({
           "complete"
         ) {
           clearTimeout(timeoutId);
-          console.log("Ice candidates gathered");
           resolve("Ice candidates gathered");
         } else {
           // Continue checking every 100ms until the condition is met
@@ -346,6 +413,7 @@ export const useCallStore = create<Call>((set, get) => ({
   handleAnswer: async (
     participantId: string,
     offer: RTCSessionDescriptionInit,
+    dataMode: boolean,
   ) => {
     const {
       userStream,
@@ -354,11 +422,18 @@ export const useCallStore = create<Call>((set, get) => ({
       conn,
       handleReconnection,
       peerConnections,
+      lowDataMode,
+      handleDataMode,
     } = get();
     const connectionKey = getConnectionKey(userId, participantId);
     // clean up for the reconnections, in case one of the peers has yet to delete their old connection
     if (peerConnections[connectionKey]) {
       handleReconnection(participantId);
+    }
+
+    // handle the data mode as soon as possible in the peerConnection lifecycle
+    if (lowDataMode !== dataMode) {
+      await handleDataMode(dataMode, false);
     }
 
     const newPeerConnection = await getPeerConnection();
@@ -369,7 +444,6 @@ export const useCallStore = create<Call>((set, get) => ({
 
     // try and setup a message channel
     newPeerConnection.ondatachannel = (channelEvent) => {
-      console.log({ channelEvent });
       const messageChannel = channelEvent.channel;
       messageChannel.onopen = () => {
         console.log("Message channel is open");
@@ -562,7 +636,7 @@ export const useCallStore = create<Call>((set, get) => ({
       track.enabled = !isCameraEnabled;
     });
 
-    // go through all the peer connections and set the video bitrate to 
+    // go through all the peer connections and set the video bitrate to
     // 0, this way no video data is sent at all. By default if disabled
     // webrtc still keeps sending black frames to the peer. More about
     // this at: https://developer.mozilla.org/en-US/docs/Web/API/MediaStreamTrack/enabled
@@ -597,6 +671,7 @@ export const useCallStore = create<Call>((set, get) => ({
       cameraPerspective,
       userStream,
       canSwitchCameraPerspective,
+      lowDataMode,
     } = get();
     if (!canSwitchCameraPerspective) {
       toasts.noRearCamera();
@@ -610,6 +685,7 @@ export const useCallStore = create<Call>((set, get) => ({
       "",
       true,
       newCameraPerspective,
+      lowDataMode,
     );
 
     // check if the user can switch for future uses
@@ -655,6 +731,7 @@ const getUserStream = async (
   audioDeviceId: string,
   video: boolean,
   perspective: "environment" | "user",
+  lowDataMode: boolean,
 ) => {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -664,8 +741,8 @@ const getUserStream = async (
       echoCancellation: true,
     },
     video: {
-      width: { min: 640, ideal: 1280, max: 1920 },
-      height: { min: 360, ideal: 720, max: 1080 },
+      width: lowDataMode ? { ideal: 360 } : { ideal: 1280 },
+      height: lowDataMode ? { ideal: 240 } : { ideal: 720 },
       facingMode: perspective,
     },
   });
@@ -702,6 +779,7 @@ const checkForBluetoothAudioDevices = async (
       audioDevices[0].deviceId,
       false,
       "user",
+      false,
     );
     bluetoothDeviceStream.getAudioTracks().forEach((t) => {
       stream.addTrack(t);

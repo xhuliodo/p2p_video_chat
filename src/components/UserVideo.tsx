@@ -120,7 +120,12 @@ const UserVideo: React.FC = () => {
 };
 
 export const DraggableAndResizableUserVideo = () => {
-  const solo = useCallStore((state) => state.solo);
+  const { solo, lowDataMode } = useCallStore(
+    useShallow((state) => ({
+      solo: state.solo,
+      lowDataMode: state.lowDataMode,
+    })),
+  );
 
   const nodeRef = useRef(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -231,7 +236,7 @@ export const DraggableAndResizableUserVideo = () => {
     >
       <div
         ref={nodeRef}
-        className={`${!solo && "absolute z-10 rounded-md"} h-fit w-fit bg-[#008B8B] transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
+        className={`${!solo && "absolute z-10 rounded-md"} h-fit w-fit bg-[#008B8B] ${lowDataMode && "bg-yellow-500"} transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
       >
         <Resizable
           bounds="window"
@@ -263,7 +268,7 @@ export const DraggableAndResizableUserVideo = () => {
           handleComponent={{
             topRight: (
               <Icon
-                className="h-10 w-10 -rotate-90 text-[#008B8B]"
+                className={`h-10 w-10 -rotate-90 text-[#008B8B] ${lowDataMode && "text-yellow-500"}`}
                 icon="lets-icons:resize-down-right"
               />
             ),

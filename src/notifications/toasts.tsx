@@ -17,7 +17,11 @@ export const toasts = {
         : "some " + "of your buddies, please try again.",
     );
   },
-  somethingWentWrong: ()=>{
-    toast("Something went wrong, you might want to refresh the page.")
-  }
+  somethingWentWrong: () => {
+    toast("Something went wrong, you might want to refresh the page.");
+  },
+  lowDataMode: (dataMode: boolean) => {
+    const state = dataMode ? "on" : "off";
+    toast(`Low data mode has been turned ${state}`);
+  },
 };

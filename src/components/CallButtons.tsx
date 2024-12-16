@@ -11,19 +11,23 @@ export const CallButtons: FC = () => {
     solo,
     switchCameraPerspective,
     canSwitchCameraPerspective,
-    endCall,
+    lowDataMode,
+    switchDataMode,
     toggleMessages,
     canSendMessage,
     newMessage,
+    endCall,
   } = useCallStore(
     useShallow((state) => ({
       solo: state.solo,
       switchCameraPerspective: state.switchCameraPerspective,
       canSwitchCameraPerspective: state.canSwitchCameraPerspective,
-      endCall: state.endCall,
+      lowDataMode: state.lowDataMode,
+      switchDataMode: state.switchDataMode,
       toggleMessages: state.toggleMessages,
       canSendMessage: state.canSendMessage,
       newMessage: state.newMessage,
+      endCall: state.endCall,
     })),
   );
 
@@ -56,7 +60,7 @@ export const CallButtons: FC = () => {
     navigate("/"); // Only navigate after endCall finishes
   };
 
-  const [isSwitchDisabled, setIsSwitchDisabled] = useState(false);
+  const [isCameraSwitchDisabled, setIsCameraSwitchDisabled] = useState(false);
 
   const {
     isCollapsed,
@@ -91,19 +95,26 @@ export const CallButtons: FC = () => {
           } ${!solo && "mt-1"} flex flex-col items-center justify-center overflow-hidden transition-all duration-300 ease-in-out`}
         >
           <button
-            name="Switch"
+            name="SwitchCamera"
             className="mb-5 flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
             onClick={async () => {
-              setIsSwitchDisabled(true);
+              setIsCameraSwitchDisabled(true);
               await switchCameraPerspective();
-              setIsSwitchDisabled(false);
+              setIsCameraSwitchDisabled(false);
             }}
-            disabled={!canSwitchCameraPerspective || isSwitchDisabled}
+            disabled={!canSwitchCameraPerspective || isCameraSwitchDisabled}
           >
             <Icon
               icon="material-symbols:flip-camera-ios"
               className="h-full w-full"
             />
+          </button>
+          <button
+            name="DataMode"
+            className={`mb-5 flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-gray-500 p-3 text-white ${lowDataMode && "bg-yellow-500"}`}
+            onClick={switchDataMode}
+          >
+            <Icon icon="ph:wifi-low-fill" className={`h-full w-full`} />
           </button>
           <button
             name="Message"
