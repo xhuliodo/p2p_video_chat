@@ -4,14 +4,12 @@ import { useEffect } from "react";
 import { ToastContainer } from "react-toastify";
 import { CallButtons } from "../components/CallButtons";
 import { Messages } from "../components/Messages";
-import { toasts } from "../notifications/toasts";
 import { DraggableAndResizableUserVideo } from "../components/UserVideo";
 import { RemoteVideos } from "../components/RemoteVideo";
 
 export const Call = () => {
   const endCall = useCallStore((state) => state.endCall);
   const startCall = useCallStore((state) => state.startCall);
-  const isCreator = useCallStore((state) => state.isCreator);
 
   const { passphrase } = useParams();
   useEffect(() => {
@@ -19,12 +17,6 @@ export const Call = () => {
       startCall(passphrase);
     }
   }, [passphrase, startCall]);
-
-  useEffect(() => {
-    if (isCreator) {
-      toasts.shareLink();
-    }
-  }, [isCreator]);
 
   useEffect(() => {
     const handleBeforeUnload = async () => await endCall();
