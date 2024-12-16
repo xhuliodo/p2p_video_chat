@@ -93,11 +93,13 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
     }
   }, [remoteStream]);
   return (
-    <video
-      ref={remoteVideoRef}
-      playsInline
-      autoPlay
-      className="h-full w-full rounded-md object-cover"
-    />
+    <div className="h-full w-full overflow-hidden rounded-md border-2">
+      <video
+        ref={remoteVideoRef}
+        playsInline
+        autoPlay
+        className="h-full w-full scale-125 transform-gpu"
+      />
+    </div>
   );
 };

@@ -36,7 +36,7 @@ const UserVideo: React.FC = () => {
 
     if (userVideo) {
       // Set the new stream as the source object
-      userVideo.srcObject = userStream;
+      userVideo.srcObject = userStream.stream;
 
       // Wait for metadata to load before playing
       const playVideo = () => {
@@ -53,7 +53,7 @@ const UserVideo: React.FC = () => {
       return () => {
         userVideo.pause();
         userVideo.removeEventListener("loadedmetadata", playVideo);
-        userStream?.getTracks().forEach((track) => track.stop());
+        userStream.stream?.getTracks().forEach((track) => track.stop());
         userVideo.srcObject = null;
       };
     }
@@ -120,12 +120,16 @@ const UserVideo: React.FC = () => {
 };
 
 export const DraggableAndResizableUserVideo = () => {
-  const { solo, lowDataMode } = useCallStore(
+  const { solo, lowDataMode, aspectRatio } = useCallStore(
     useShallow((state) => ({
       solo: state.solo,
       lowDataMode: state.lowDataMode,
+      aspectRatio: state.userStream.aspectRatio,
     })),
   );
+
+  const minWidth = aspectRatio > 1 ? 100 * aspectRatio : 100;
+  const minHeight = aspectRatio > 1 ? 100 : 100 / aspectRatio;
 
   const nodeRef = useRef(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -143,7 +147,7 @@ export const DraggableAndResizableUserVideo = () => {
   useEffect(() => {
     setPosition((prevPosition) => {
       const newX = solo ? 0 : windowDimensions.width * 0.05;
-      const newY = solo ? 0 : windowDimensions.height * 0.95 - 192;
+      const newY = solo ? 0 : windowDimensions.height * 0.95 - minHeight;
 
       // When not solo, maintain the relative position proportions if resizing
       const x = solo
@@ -157,11 +161,12 @@ export const DraggableAndResizableUserVideo = () => {
       return { x: x || newX, y: y || newY }; // Default to bottom-left if proportions are not set
     });
   }, [
-    windowDimensions.height,
-    windowDimensions.width,
+    minHeight,
     previousDimensions.height,
     previousDimensions.width,
     solo,
+    windowDimensions.height,
+    windowDimensions.width,
   ]);
   useEffect(() => {
     if (!solo) {
@@ -169,7 +174,7 @@ export const DraggableAndResizableUserVideo = () => {
         size.height === windowDimensions.height &&
         size.width === windowDimensions.width;
       if (fullscreen) {
-        setSize({ width: 128, height: 192 });
+        setSize({ width: minWidth, height: minHeight });
       }
     } else {
       setSize({
@@ -178,6 +183,8 @@ export const DraggableAndResizableUserVideo = () => {
       });
     }
   }, [
+    minHeight,
+    minWidth,
     size.height,
     size.width,
     solo,
@@ -236,14 +243,14 @@ export const DraggableAndResizableUserVideo = () => {
     >
       <div
         ref={nodeRef}
-        className={`${!solo && "absolute z-10 rounded-md"} h-fit w-fit bg-[#008B8B] ${lowDataMode && "bg-yellow-500"} transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
+        className={`${!solo && "absolute z-10 rounded-md"} h-fit w-fit bg-${lowDataMode ? "yellow-500" : "[#008B8B]"} transition-all duration-500 ease-in-out ${(isDragging || isResizing) && "transition-none"}`}
       >
         <Resizable
           bounds="window"
           size={size}
           lockAspectRatio
-          minHeight={192}
-          minWidth={128}
+          minHeight={minHeight}
+          minWidth={minWidth}
           maxHeight={
             solo ? windowDimensions.height : windowDimensions.height * 0.5
           }

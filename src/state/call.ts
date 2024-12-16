@@ -35,8 +35,12 @@ export interface Message {
   username?: string;
 }
 
+interface VideoStream {
+  stream: MediaStream | null;
+  aspectRatio: number;
+}
+
 interface Call {
-  test: (howMany: number) => void;
   userId: string;
   solo: boolean;
   passphrase: string;
@@ -44,7 +48,7 @@ interface Call {
   lowDataMode: boolean;
   switchDataMode: () => void;
   handleDataMode: (dataMode: boolean, initiator: boolean) => Promise<void>;
-  userStream: MediaStream | null;
+  userStream: VideoStream;
   remoteStreams: Record<string, MediaStream>;
   addRemoteStream: (key: string, stream: MediaStream) => void;
   deleteRemoteStream: (key: string) => void;
@@ -96,13 +100,6 @@ interface Call {
 }
 
 export const useCallStore = create<Call>((set, get) => ({
-  test: async (howMany: number) => {
-    const stream = await getUserStream(false, "", true, "user", false);
-    set({ solo: false, userStream: stream });
-    for (let i = 0; i < howMany; i++) {
-      get().addRemoteStream(`${i}`, stream);
-    }
-  },
   userId: v7(),
   solo: true,
   passphrase: "",
@@ -130,14 +127,14 @@ export const useCallStore = create<Call>((set, get) => ({
       dataMode,
     );
 
-    const videoTrack = userStream?.getVideoTracks()[0];
+    const videoTrack = userStream.stream?.getVideoTracks()[0];
     videoTrack?.stop();
     if (videoTrack) {
-      userStream.removeTrack(videoTrack);
+      userStream.stream?.removeTrack(videoTrack);
     }
 
     const newVideoTrack = stream.getVideoTracks()[0];
-    userStream?.addTrack(newVideoTrack);
+    userStream.stream?.addTrack(newVideoTrack);
 
     for (const k of Object.keys(peerConnections)) {
       const sender = peerConnections[k].peerConnection
@@ -155,7 +152,7 @@ export const useCallStore = create<Call>((set, get) => ({
 
     toasts.lowDataMode(dataMode);
   },
-  userStream: null,
+  userStream: { stream: null, aspectRatio: 1 },
   remoteStreams: {},
   addRemoteStream: (key: string, stream: MediaStream) => {
     set((state) =>
@@ -305,8 +302,11 @@ export const useCallStore = create<Call>((set, get) => ({
       }
     };
 
+    const settings = stream.getVideoTracks()[0].getSettings();
+    const ar =
+      settings.aspectRatio || (settings.width || 1) / (settings.height || 1);
     set(() => ({
-      userStream: stream,
+      userStream: { stream, aspectRatio: ar },
       passphrase,
       conn: newWebsocketConnection,
     }));
@@ -324,8 +324,10 @@ export const useCallStore = create<Call>((set, get) => ({
 
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
-    userStream?.getTracks().forEach((track) => {
-      newPeerConnection.addTrack(track, userStream);
+    userStream.stream?.getTracks().forEach((track) => {
+      if (userStream.stream) {
+        newPeerConnection.addTrack(track, userStream.stream);
+      }
     });
 
     // try and setup a message channel
@@ -438,8 +440,10 @@ export const useCallStore = create<Call>((set, get) => ({
 
     const newPeerConnection = await getPeerConnection();
     // Add local stream tracks to the peer connection
-    userStream?.getTracks().forEach((track) => {
-      newPeerConnection.addTrack(track, userStream);
+    userStream.stream?.getTracks().forEach((track) => {
+      if (userStream.stream) {
+        newPeerConnection.addTrack(track, userStream.stream);
+      }
     });
 
     // try and setup a message channel
@@ -622,7 +626,7 @@ export const useCallStore = create<Call>((set, get) => ({
   isAudioEnabled: true,
   switchAudio: async () => {
     const { userStream, isAudioEnabled } = get();
-    userStream?.getAudioTracks().forEach((track) => {
+    userStream.stream?.getAudioTracks().forEach((track) => {
       track.enabled = !isAudioEnabled;
     });
 
@@ -632,7 +636,7 @@ export const useCallStore = create<Call>((set, get) => ({
   cameraPerspective: "user",
   switchCamera: async () => {
     const { userStream, isCameraEnabled, peerConnections } = get();
-    userStream?.getVideoTracks().forEach((track) => {
+    userStream.stream?.getVideoTracks().forEach((track) => {
       track.enabled = !isCameraEnabled;
     });
 
@@ -702,15 +706,15 @@ export const useCallStore = create<Call>((set, get) => ({
     }
 
     // stop older video track and remove it
-    const videoTrack = userStream?.getVideoTracks()[0];
+    const videoTrack = userStream.stream?.getVideoTracks()[0];
     videoTrack?.stop();
     if (videoTrack) {
-      userStream?.removeTrack(videoTrack);
+      userStream.stream?.removeTrack(videoTrack);
     }
 
     // add new video track to the ui and to the webrtc connection
     const newVideoTrack = newUserStream.getVideoTracks()[0];
-    userStream?.addTrack(newVideoTrack);
+    userStream.stream?.addTrack(newVideoTrack);
     for (const k of Object.keys(peerConnections)) {
       const sender = peerConnections[k].peerConnection
         .getSenders()
