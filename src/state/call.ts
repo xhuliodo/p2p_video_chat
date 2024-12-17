@@ -348,7 +348,9 @@ export const useCallStore = create<Call>((set, get) => ({
     newPeerConnection.ontrack = (event) => {
       const { addRemoteStream } = get();
       if (event.streams.length) {
-        sounds.callStartedSound.play();
+        if (!Object.entries(get().peerConnections)) {
+          sounds.callStartedSound.play();
+        }
         event.streams.map((s) => addRemoteStream(connectionKey, s));
       }
     };
@@ -469,7 +471,9 @@ export const useCallStore = create<Call>((set, get) => ({
     newPeerConnection.ontrack = (event) => {
       const { addRemoteStream } = get();
       if (event.streams.length) {
-        sounds.callStartedSound.play();
+        if (!Object.entries(get().peerConnections)) {
+          sounds.callStartedSound.play();
+        }
         event.streams.map((s) => addRemoteStream(connectionKey, s));
       }
     };
@@ -604,8 +608,6 @@ export const useCallStore = create<Call>((set, get) => ({
   },
   subscriptions: [],
   endCall: async () => {
-    sounds.callEndedSound.play();
-
     const {
       deleteRemoteStream,
       peerConnections,
