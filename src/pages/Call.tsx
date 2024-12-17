@@ -6,6 +6,7 @@ import { CallButtons } from "../components/CallButtons";
 import { Messages } from "../components/Messages";
 import { DraggableAndResizableUserVideo } from "../components/UserVideo";
 import { RemoteVideos } from "../components/RemoteVideo";
+import { router } from "../routes";
 
 export const Call = () => {
   const endCall = useCallStore((state) => state.endCall);
@@ -13,10 +14,30 @@ export const Call = () => {
 
   const { passphrase } = useParams();
   useEffect(() => {
-    if (passphrase) {
-      startCall(passphrase);
-    }
-  }, [passphrase, startCall]);
+    const init = async () => {
+      if (passphrase) {
+        try {
+          await startCall(passphrase);
+        } catch (e: unknown) {
+          // Ensure 'e' is an error object before accessing properties
+          if (e instanceof Error) {
+            router.navigate("/", {
+              state: { message: e.message },
+            });
+          } else {
+            // Handle case where error is not an instance of Error
+            router.navigate("/", {
+              state: { message: "An unknown error occurred" },
+            });
+          }
+          return;
+        }
+      }
+    };
+
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = async () => await endCall();

@@ -98,7 +98,7 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
         ref={remoteVideoRef}
         playsInline
         autoPlay
-        className="h-full w-full scale-125 transform-gpu"
+        className="h-full w-full scale-110 transform-gpu origin-center"
       />
     </div>
   );

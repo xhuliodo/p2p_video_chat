@@ -1,7 +1,5 @@
 import { create } from "zustand";
 import { v7 } from "uuid";
-import { router } from "../routes";
-// import { sounds } from "../notifications/sounds";
 import { toasts } from "../notifications/toasts";
 import { sounds } from "../notifications/sounds";
 import {
@@ -220,47 +218,43 @@ export const useCallStore = create<Call>((set, get) => ({
       lowDataMode,
       handleDataMode,
     } = get();
-    let stream;
+    const userStream: VideoStream = { stream: null, aspectRatio: 1 };
     try {
-      stream = await getUserStream(
+      userStream.stream = await getUserStream(
         isAudioEnabled,
         "",
         isCameraEnabled,
         cameraPerspective,
         lowDataMode,
       );
-      stream = await checkForBluetoothAudioDevices(stream);
+      userStream.stream = await checkForBluetoothAudioDevices(
+        userStream.stream,
+      );
     } catch {
-      router.navigate("/", {
-        state: { message: "Permissions of camera and audio are required!" },
-      });
-      return;
+      throw new Error("Permissions of camera and audio are required!");
     }
 
+    userStream.aspectRatio = getAspectRatio(userStream.stream);
+
     if (!window["WebSocket"]) {
-      router.navigate("/", {
-        state: { message: "Your browser does not support websockets!" },
-      });
-      return;
+      throw new Error("Your browser does not support websockets!");
     }
 
     const newWebsocketConnection = new WebSocket(
       "wss://" + import.meta.env.VITE_WEBSOCKET_URL + "/calls/" + passphrase,
     );
 
+    newWebsocketConnection.onopen = () => {
+      const e = newNewParticipantEvent(userId);
+      newWebsocketConnection.send(e);
+    };
     newWebsocketConnection.onclose = (e) => {
       if (!e.wasClean) {
         toasts.somethingWentWrong();
       }
     };
-
     newWebsocketConnection.onerror = (e) => {
       console.log("WebSocket error: ", e);
-    };
-
-    newWebsocketConnection.onopen = () => {
-      const e = newNewParticipantEvent(userId);
-      newWebsocketConnection.send(e);
     };
     newWebsocketConnection.onmessage = async (e) => {
       const event: WSEvent = JSON.parse(e.data);
@@ -302,11 +296,8 @@ export const useCallStore = create<Call>((set, get) => ({
       }
     };
 
-    const settings = stream.getVideoTracks()[0].getSettings();
-    const ar =
-      settings.aspectRatio || (settings.width || 1) / (settings.height || 1);
     set(() => ({
-      userStream: { stream, aspectRatio: ar },
+      userStream,
       passphrase,
       conn: newWebsocketConnection,
     }));
@@ -319,6 +310,8 @@ export const useCallStore = create<Call>((set, get) => ({
       userId,
       handleReconnection,
       lowDataMode,
+      receiveMessage,
+      addRemoteStream,
     } = get();
     const connectionKey = getConnectionKey(userId, participantId);
 
@@ -342,11 +335,10 @@ export const useCallStore = create<Call>((set, get) => ({
     messageChannel.onerror = (e) => {
       console.log("something went wrong: ", e);
     };
-    messageChannel.onmessage = get().receiveMessage;
+    messageChannel.onmessage = receiveMessage;
 
     // Handle incoming tracks from remote peers
     newPeerConnection.ontrack = (event) => {
-      const { addRemoteStream } = get();
       if (event.streams.length) {
         if (!Object.entries(get().peerConnections)) {
           sounds.callStartedSound.play();
@@ -523,7 +515,11 @@ export const useCallStore = create<Call>((set, get) => ({
   ) => {
     const { userId, peerConnections } = get();
     const connectionKey = getConnectionKey(userId, participantId);
-    peerConnections[connectionKey].peerConnection.addIceCandidate(iceCandidate);
+    if (peerConnections[connectionKey]) {
+      peerConnections[connectionKey].peerConnection.addIceCandidate(
+        iceCandidate,
+      );
+    }
   },
   handleParticipantLeft: async (participantId: string) => {
     const { userId, deletePeerConnection, deleteRemoteStream } = get();
@@ -764,6 +760,11 @@ const getUserStream = async (
   return stream;
 };
 
+/**
+ * checkForBluetoothAudioDevices check if there are any connected and active bluetooth
+ * devices connected at the start of the call. if there are, it replaces it. this function
+ * solves this issue encountered on mobile only.
+ */
 const checkForBluetoothAudioDevices = async (
   stream: MediaStream,
 ): Promise<MediaStream> => {
@@ -840,4 +841,20 @@ const getIsOfferer = (id: string, otherId: string): boolean => {
   }
 
   return false;
+};
+
+const getAspectRatio = (stream: MediaStream): number => {
+  const defaultAspectRatio = 16 / 9;
+  const videoTracks = stream.getVideoTracks();
+  if (!videoTracks.length) {
+    console.log("could not get video track to calculate aspect ratio");
+    return defaultAspectRatio;
+  }
+  const settings = videoTracks[0].getSettings();
+
+  window.alert(JSON.stringify(settings, null, 2));
+
+  if (settings.aspectRatio) return settings.aspectRatio;
+
+  return (settings.width || 1) / (settings.height || 1);
 };

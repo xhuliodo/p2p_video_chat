@@ -128,8 +128,13 @@ export const DraggableAndResizableUserVideo = () => {
     })),
   );
 
-  const minWidth = aspectRatio > 1 ? 100 * aspectRatio : 100;
-  const minHeight = aspectRatio > 1 ? 100 : 100 / aspectRatio;
+  const baseSize = 100; // Base size for minimum dimensions
+  const addedButtonSize = 24;
+  const minWidth = aspectRatio > 1 ? baseSize * aspectRatio : baseSize;
+  const minHeight =
+    aspectRatio < 1
+      ? (baseSize + addedButtonSize) * (1 + aspectRatio)
+      : baseSize + addedButtonSize;
 
   const nodeRef = useRef(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
