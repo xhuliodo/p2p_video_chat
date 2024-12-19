@@ -1,7 +1,9 @@
 import { create } from "zustand";
+import { produce } from "immer";
 import { v7 } from "uuid";
 import { toasts } from "../notifications/toasts";
 import { sounds } from "../notifications/sounds";
+import { constants } from "../constants";
 import {
   newAnswerEvent,
   newIceCandidateEvent,
@@ -16,8 +18,6 @@ import {
   newDataModeEvent,
   DataModeResponse,
 } from "./events";
-import { toast } from "react-toastify";
-import { produce } from "immer";
 
 type CameraPerspective = "environment" | "user";
 
@@ -55,22 +55,18 @@ interface Call {
   deletePeerConnection: (key: string) => void;
   startCall: (passphrase: string) => Promise<void>;
   handleOffer: (participantId: string) => Promise<void>;
-  waitForIceCandidatesOrTimeout: (
-    participantId: string,
-    timeout: number,
-  ) => Promise<string>;
   handleAnswer: (
     participantId: string,
-    offer: RTCSessionDescriptionInit,
+    offer: string,
     dataMode: boolean,
   ) => Promise<void>;
   handleAnswerResponse: (
     participantId: string,
-    answer: RTCSessionDescriptionInit,
+    answer: string,
   ) => Promise<void>;
   handleIceCandidates: (
     participantId: string,
-    iceCandidate: RTCIceCandidate,
+    iceCandidate: string,
   ) => Promise<void>;
   handleParticipantLeft: (participantId: string) => Promise<void>;
   handleReconnection: (connectionKey: string) => Promise<void>;
@@ -92,7 +88,7 @@ interface Call {
   isCameraEnabled: boolean;
   cameraPerspective: CameraPerspective;
   switchCamera: () => void;
-  shouldFlip: boolean;
+  shouldMirrorCamera: boolean;
   canSwitchCameraPerspective: boolean;
   switchCameraPerspective: () => Promise<void>;
 }
@@ -118,7 +114,7 @@ export const useCallStore = create<Call>((set, get) => ({
     } = get();
 
     const stream = await getUserStream(
-      true,
+      false,
       "",
       isCameraEnabled,
       cameraPerspective,
@@ -126,19 +122,40 @@ export const useCallStore = create<Call>((set, get) => ({
     );
 
     const videoTrack = userStream.stream?.getVideoTracks()[0];
-    videoTrack?.stop();
+    const newVideoTrack = stream.getVideoTracks()[0];
     if (videoTrack) {
+      videoTrack.stop();
       userStream.stream?.removeTrack(videoTrack);
     }
-
-    const newVideoTrack = stream.getVideoTracks()[0];
     userStream.stream?.addTrack(newVideoTrack);
 
+    let failures = 0;
     for (const k of Object.keys(peerConnections)) {
-      const sender = peerConnections[k].peerConnection
-        .getSenders()
-        .find((s) => s.track?.kind === "video");
-      sender?.replaceTrack(newVideoTrack);
+      try {
+        const sender = peerConnections[k].peerConnection
+          .getSenders()
+          .find((s) => s.track?.kind === "video");
+        if (sender) {
+          sender.replaceTrack(newVideoTrack);
+
+          const parameters = sender.getParameters();
+          if (!parameters.encodings) {
+            parameters.encodings = [{}];
+          }
+
+          if (dataMode) {
+            parameters.encodings[0].maxBitrate = constants.sdMaxBitrate;
+          } else {
+            parameters.encodings[0].maxBitrate = constants.hdMaxBitrate;
+          }
+
+          await sender.setParameters(parameters);
+        }
+      } catch (err: unknown) {
+        console.log("could not set parameters with err: ", { err });
+        failures++;
+        break;
+      }
     }
 
     if (initiator) {
@@ -148,7 +165,11 @@ export const useCallStore = create<Call>((set, get) => ({
       set(() => ({ lowDataMode: dataMode }));
     }
 
-    toasts.lowDataMode(dataMode);
+    if (failures) {
+      toasts.lowDataModeFailed();
+    } else {
+      toasts.lowDataMode(dataMode);
+    }
   },
   userStream: { stream: null, aspectRatio: 1 },
   remoteStreams: {},
@@ -233,7 +254,6 @@ export const useCallStore = create<Call>((set, get) => ({
     } catch {
       throw new Error("Permissions of camera and audio are required!");
     }
-
     userStream.aspectRatio = getAspectRatio(userStream.stream);
 
     if (!window["WebSocket"]) {
@@ -243,7 +263,6 @@ export const useCallStore = create<Call>((set, get) => ({
     const newWebsocketConnection = new WebSocket(
       "wss://" + import.meta.env.VITE_WEBSOCKET_URL + "/calls/" + passphrase,
     );
-
     newWebsocketConnection.onopen = () => {
       const e = newNewParticipantEvent(userId);
       newWebsocketConnection.send(e);
@@ -260,27 +279,25 @@ export const useCallStore = create<Call>((set, get) => ({
       const event: WSEvent = JSON.parse(e.data);
       switch (event.type) {
         case "new_participant": {
+          toasts.connecting();
           const eventData = event.payload as NewParticipantResponse;
           handleOffer(eventData.participantId);
           break;
         }
         case "offer": {
+          toasts.connecting();
           const eventData = event.payload as OfferResponse;
-          const offer = JSON.parse(eventData.offer);
-          handleAnswer(eventData.from, offer, eventData.dataMode);
+          handleAnswer(eventData.from, eventData.offer, eventData.dataMode);
           break;
         }
         case "answer": {
           const eventData = event.payload as AnswerResponse;
-          const answer = JSON.parse(eventData.answer);
-          handleAnswerResponse(eventData.from, answer);
+          handleAnswerResponse(eventData.from, eventData.answer);
           break;
         }
         case "ice_candidate": {
           const eventData = event.payload as IceCandidateResponse;
-          const iceCandidateJson = JSON.parse(eventData.iceCandidate);
-          const iceCandidate = new RTCIceCandidate(iceCandidateJson);
-          handleIceCandidates(eventData.from, iceCandidate);
+          handleIceCandidates(eventData.from, eventData.iceCandidate);
           break;
         }
         case "participant_left": {
@@ -322,6 +339,60 @@ export const useCallStore = create<Call>((set, get) => ({
         newPeerConnection.addTrack(track, userStream.stream);
       }
     });
+    // Handle incoming tracks from remote peers
+    newPeerConnection.ontrack = (event) => {
+      if (event.streams.length) {
+        if (!Object.entries(get().remoteStreams))
+          sounds.callStartedSound.play();
+
+        event.streams.map((s) => addRemoteStream(connectionKey, s));
+      }
+    };
+    // Handle reconnection or cleanup
+    newPeerConnection.oniceconnectionstatechange = async () => {
+      const state = newPeerConnection.iceConnectionState;
+      toasts.connectionStatus(state);
+      if (state === "connected") {
+        const sender = newPeerConnection
+          .getSenders()
+          .find((s) => s.track?.kind === "video");
+        if (sender) {
+          const parameters = sender.getParameters();
+          if (!parameters.encodings) {
+            parameters.encodings = [{}];
+          }
+
+          if (get().lowDataMode) {
+            parameters.encodings[0].maxBitrate = constants.sdMaxBitrate; // Disable bandwidth usage
+          } else {
+            parameters.encodings[0].maxBitrate = constants.hdMaxBitrate;
+          }
+
+          sender
+            .setParameters(parameters)
+            .then(() => console.log("maxbitrate set"))
+            .catch(() => console.log("could not set parameter for bitrate"));
+        } else {
+          console.log("could not find send to set bitrate");
+        }
+      }
+      if (
+        state === "failed" ||
+        state === "disconnected" ||
+        state === "closed" ||
+        state === "completed"
+      ) {
+        handleReconnection(participantId);
+      }
+    };
+    // Handle ICE candidates
+    newPeerConnection.onicecandidate = async (event) => {
+      if (event.candidate) {
+        const c = JSON.stringify(event.candidate.toJSON());
+        const e = newIceCandidateEvent(c, participantId);
+        conn?.send(e);
+      }
+    };
 
     // try and setup a message channel
     const messageChannel = newPeerConnection.createDataChannel("chat");
@@ -337,91 +408,42 @@ export const useCallStore = create<Call>((set, get) => ({
     };
     messageChannel.onmessage = receiveMessage;
 
-    // Handle incoming tracks from remote peers
-    newPeerConnection.ontrack = (event) => {
-      if (event.streams.length) {
-        if (!Object.entries(get().peerConnections)) {
-          sounds.callStartedSound.play();
-        }
-        event.streams.map((s) => addRemoteStream(connectionKey, s));
-      }
-    };
-    newPeerConnection.oniceconnectionstatechange = async () => {
-      const state = newPeerConnection.iceConnectionState;
-      toast(state);
-      if (
-        state === "failed" ||
-        state === "disconnected" ||
-        state === "closed" ||
-        state === "completed"
-      ) {
-        handleReconnection(participantId);
-      }
-    };
-
     // Create an offer to connect to the remote peer
-    const offer = await newPeerConnection.createOffer({ iceRestart: false });
+    const offer = await newPeerConnection.createOffer();
     await newPeerConnection.setLocalDescription(offer);
     const e = newOfferEvent(JSON.stringify(offer), lowDataMode, participantId);
     conn?.send(e);
-
-    // Handle ICE candidates
-    newPeerConnection.onicecandidate = async (event) => {
-      if (event.candidate) {
-        const c = JSON.stringify(event.candidate.toJSON());
-        const e = newIceCandidateEvent(c, participantId);
-        conn?.send(e);
-      }
-    };
 
     const { addPeerConnection } = get();
     addPeerConnection(connectionKey, newPeerConnection);
     addMessageChannel(connectionKey, messageChannel);
   },
-  waitForIceCandidatesOrTimeout: (to: string, timeout: number) => {
-    const { userId } = get();
-    const connectionKey = getConnectionKey(userId, to);
-
-    return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        console.log("Timeout reached");
-        resolve("Timeout reached");
-      }, timeout);
-
-      const checkCondition = () => {
-        const { peerConnections } = get();
-        if (
-          peerConnections[connectionKey].peerConnection.iceGatheringState ===
-          "complete"
-        ) {
-          clearTimeout(timeoutId);
-          resolve("Ice candidates gathered");
-        } else {
-          // Continue checking every 100ms until the condition is met
-          setTimeout(checkCondition, 100);
-        }
-      };
-
-      // Start checking the condition
-      checkCondition();
-    });
-  },
   handleAnswer: async (
     participantId: string,
-    offer: RTCSessionDescriptionInit,
+    offer: string,
     dataMode: boolean,
   ) => {
+    const { userId, handleReconnection } = get();
+    const connectionKey = getConnectionKey(userId, participantId);
+
+    let o: RTCSessionDescription;
+    try {
+      const offerJson = JSON.parse(offer);
+      o = new RTCSessionDescription(offerJson);
+    } catch (err: unknown) {
+      console.error("could not parse offer with err: ", { err });
+      handleReconnection(connectionKey);
+      return;
+    }
+
     const {
       userStream,
       addMessageChannel,
-      userId,
       conn,
-      handleReconnection,
       peerConnections,
       lowDataMode,
       handleDataMode,
     } = get();
-    const connectionKey = getConnectionKey(userId, participantId);
     // clean up for the reconnections, in case one of the peers has yet to delete their old connection
     if (peerConnections[connectionKey]) {
       handleReconnection(participantId);
@@ -439,6 +461,61 @@ export const useCallStore = create<Call>((set, get) => ({
         newPeerConnection.addTrack(track, userStream.stream);
       }
     });
+    // Handle incoming tracks from remote peers
+    newPeerConnection.ontrack = (event) => {
+      const { addRemoteStream } = get();
+      if (event.streams.length) {
+        if (!Object.entries(get().remoteStreams)) {
+          sounds.callStartedSound.play();
+        }
+        event.streams.map((s) => addRemoteStream(connectionKey, s));
+      }
+    };
+    // Handle reconnection or cleanup
+    newPeerConnection.oniceconnectionstatechange = async () => {
+      const state = newPeerConnection.iceConnectionState;
+      toasts.connectionStatus(state);
+      if (state === "connected") {
+        const sender = newPeerConnection
+          .getSenders()
+          .find((s) => s.track?.kind === "video");
+        if (sender) {
+          const parameters = sender.getParameters();
+          if (!parameters.encodings) {
+            parameters.encodings = [{}];
+          }
+
+          if (get().lowDataMode) {
+            parameters.encodings[0].maxBitrate = constants.sdMaxBitrate; // Disable bandwidth usage
+          } else {
+            parameters.encodings[0].maxBitrate = constants.hdMaxBitrate;
+          }
+
+          sender
+            .setParameters(parameters)
+            .then(() => console.log("maxbitrate set"))
+            .catch(() => console.log("could not set parameter for bitrate"));
+        } else {
+          console.log("could not find send to set bitrate");
+        }
+      }
+      if (
+        state === "failed" ||
+        state === "disconnected" ||
+        state === "closed" ||
+        state === "completed"
+      ) {
+        handleReconnection(participantId);
+      }
+    };
+    // Handle ICE candidates
+    newPeerConnection.onicecandidate = async (event) => {
+      if (event.candidate) {
+        const c = JSON.stringify(event.candidate.toJSON());
+        const e = newIceCandidateEvent(c, participantId);
+        conn?.send(e);
+      }
+    };
 
     // try and setup a message channel
     newPeerConnection.ondatachannel = (channelEvent) => {
@@ -449,7 +526,7 @@ export const useCallStore = create<Call>((set, get) => ({
       };
       messageChannel.onclose = () => {
         console.log("Message channel is closed");
-        // set(() => ({ canSendMessage: false, showMessages: false }));
+        set(() => ({ canSendMessage: false, showMessages: false }));
       };
       messageChannel.onerror = (e) => {
         console.log("something went wrong: ", e);
@@ -459,67 +536,78 @@ export const useCallStore = create<Call>((set, get) => ({
       addMessageChannel(connectionKey, messageChannel);
     };
 
-    // Handle incoming tracks from remote peers
-    newPeerConnection.ontrack = (event) => {
-      const { addRemoteStream } = get();
-      if (event.streams.length) {
-        if (!Object.entries(get().peerConnections)) {
-          sounds.callStartedSound.play();
-        }
-        event.streams.map((s) => addRemoteStream(connectionKey, s));
-      }
-    };
-
-    newPeerConnection.oniceconnectionstatechange = async () => {
-      const state = newPeerConnection.iceConnectionState;
-      toast(state);
-      if (
-        state === "failed" ||
-        state === "disconnected" ||
-        state === "closed" ||
-        state === "completed"
-      ) {
-        handleReconnection(participantId);
-      }
-    };
-
-    await newPeerConnection.setRemoteDescription(offer);
+    await newPeerConnection.setRemoteDescription(o);
     const answer = await newPeerConnection.createAnswer();
     await newPeerConnection.setLocalDescription(answer);
     const e = newAnswerEvent(JSON.stringify(answer), participantId);
     conn?.send(e);
 
-    // Handle ICE candidates
-    newPeerConnection.onicecandidate = async (event) => {
-      if (event.candidate) {
-        const c = JSON.stringify(event.candidate.toJSON());
-        const e = newIceCandidateEvent(c, participantId);
-        conn?.send(e);
-      }
-    };
-
     const { addPeerConnection } = get();
     addPeerConnection(connectionKey, newPeerConnection);
   },
-  handleAnswerResponse: async (
-    participantId: string,
-    answer: RTCSessionDescriptionInit,
-  ) => {
-    const { peerConnections, userId } = get();
+  handleAnswerResponse: async (participantId: string, answer: string) => {
+    const { userId, handleReconnection } = get();
     const connectionKey = getConnectionKey(userId, participantId);
-    peerConnections[connectionKey].peerConnection.setRemoteDescription(answer);
-  },
-  handleIceCandidates: async (
-    participantId: string,
-    iceCandidate: RTCIceCandidate,
-  ) => {
-    const { userId, peerConnections } = get();
-    const connectionKey = getConnectionKey(userId, participantId);
-    if (peerConnections[connectionKey]) {
-      peerConnections[connectionKey].peerConnection.addIceCandidate(
-        iceCandidate,
-      );
+
+    let a: RTCSessionDescription;
+    try {
+      console.log({ answer });
+      const answerJson = JSON.parse(answer);
+      a = new RTCSessionDescription(answerJson);
+    } catch (err: unknown) {
+      console.error("could not parse answer with err: ", { err });
+      handleReconnection(connectionKey);
+      return;
     }
+
+    const { peerConnections } = get();
+    if (peerConnections[connectionKey]) {
+      peerConnections[connectionKey].peerConnection.setRemoteDescription(a);
+    } else {
+      console.log("answer came before peer connection was establised");
+    }
+  },
+  handleIceCandidates: async (participantId: string, iceCandidate: string) => {
+    let ic: RTCIceCandidate;
+    try {
+      const iceCandidateJson = JSON.parse(iceCandidate);
+      ic = new RTCIceCandidate(iceCandidateJson);
+    } catch (err: unknown) {
+      console.error("could not parse ice candidate with err: ", { err });
+      return;
+    }
+
+    const { userId } = get();
+    const connectionKey = getConnectionKey(userId, participantId);
+    // ice candidates as exhanged as soon as the participants are notified that there
+    // is another party. to prevent loss on these candidates, the function below sets
+    // them eventually with a timeout and a max of X times
+    const waitFor = 100; //in miliseconds
+    const tryFor = 3;
+    const addIceCandidateEventually = (triesLeft: number) => {
+      if (!triesLeft) {
+        console.log(`Failed to set ICE candidate after ${tryFor} attempts`);
+        return;
+      }
+
+      const { peerConnections } = get();
+      if (!peerConnections[connectionKey]) {
+        console.log(
+          `Retrying to add ICE candidate... (${tryFor + 1 - triesLeft}/${tryFor})`,
+        );
+        setTimeout(() => addIceCandidateEventually(triesLeft - 1), waitFor);
+        return;
+      }
+
+      peerConnections[connectionKey].peerConnection
+        .addIceCandidate(ic)
+        .then(() => console.log("ICE candidate added successfully"))
+        .catch((err: unknown) =>
+          console.error("Failed to add ICE candidate:", { err }),
+        );
+    };
+
+    addIceCandidateEventually(tryFor);
   },
   handleParticipantLeft: async (participantId: string) => {
     const { userId, deletePeerConnection, deleteRemoteStream } = get();
@@ -528,6 +616,7 @@ export const useCallStore = create<Call>((set, get) => ({
     deletePeerConnection(connectionKey);
   },
   handleReconnection: async (participantId: string) => {
+    toasts.reconnecting();
     const { handleParticipantLeft, userId, handleOffer } = get();
     handleParticipantLeft(participantId);
 
@@ -550,7 +639,13 @@ export const useCallStore = create<Call>((set, get) => ({
   addMessageChannel: (key: string, messageChannel: RTCDataChannel) => {
     set((state) =>
       produce(state, (draft) => {
-        draft.peerConnections[key].messageChannel = messageChannel;
+        if (draft.peerConnections[key]) {
+          draft.peerConnections[key].messageChannel = messageChannel;
+        } else {
+          console.log(
+            "message channel was opened before the connection was established",
+          );
+        }
         return draft;
       }),
     );
@@ -584,9 +679,9 @@ export const useCallStore = create<Call>((set, get) => ({
           { content, timestamp: now, sentByUser: true },
         ],
       }));
-    } catch (e) {
+    } catch (e: unknown) {
       failures++;
-      console.log("could not send message with err:", e);
+      console.log("could not send message with err:", { e });
     }
     if (failures) {
       toasts.failedMessageDelivery(failures === participantsCount);
@@ -633,9 +728,10 @@ export const useCallStore = create<Call>((set, get) => ({
   isCameraEnabled: true,
   cameraPerspective: "user",
   switchCamera: async () => {
-    const { userStream, isCameraEnabled, peerConnections } = get();
+    const { userStream, isCameraEnabled, peerConnections, lowDataMode } = get();
+    const newIsCameraEnabled = !isCameraEnabled;
     userStream.stream?.getVideoTracks().forEach((track) => {
-      track.enabled = !isCameraEnabled;
+      track.enabled = newIsCameraEnabled;
     });
 
     // go through all the peer connections and set the video bitrate to
@@ -653,8 +749,10 @@ export const useCallStore = create<Call>((set, get) => ({
           parameters.encodings = [{}];
         }
 
-        if (isCameraEnabled) {
-          delete parameters.encodings[0].maxBitrate;
+        if (newIsCameraEnabled) {
+          parameters.encodings[0].maxBitrate = lowDataMode
+            ? constants.sdMaxBitrate
+            : constants.hdMaxBitrate;
         } else {
           parameters.encodings[0].maxBitrate = 0; // Disable bandwidth usage
         }
@@ -665,54 +763,50 @@ export const useCallStore = create<Call>((set, get) => ({
 
     set(() => ({ isCameraEnabled: !isCameraEnabled }));
   },
-  shouldFlip: true,
+  shouldMirrorCamera: true,
   canSwitchCameraPerspective: true,
   switchCameraPerspective: async () => {
-    const {
-      peerConnections,
-      cameraPerspective,
-      userStream,
-      canSwitchCameraPerspective,
-      lowDataMode,
-    } = get();
-    if (!canSwitchCameraPerspective) {
-      toasts.noRearCamera();
-      return;
-    }
+    const { peerConnections, cameraPerspective, userStream, lowDataMode } =
+      get();
     const newCameraPerspective =
       cameraPerspective === "user" ? "environment" : "user";
 
-    const newUserStream = await getUserStream(
-      false,
-      "",
-      true,
-      newCameraPerspective,
-      lowDataMode,
-    );
+    let newUserStream: MediaStream;
+    try {
+      newUserStream = await getUserStream(
+        false,
+        "",
+        true,
+        newCameraPerspective,
+        lowDataMode,
+      );
+    } catch (err: unknown) {
+      console.error("could not switch camera with err: ", { err });
+      throw new Error("Permissions of camera are required!");
+    }
 
     // check if the user can switch for future uses
-    if (cameraPerspective === "user") {
+    if (newCameraPerspective === "environment") {
       const newTrackSettings = newUserStream.getVideoTracks()[0].getSettings();
       if (
         !newTrackSettings.facingMode ||
         newTrackSettings.facingMode === "user"
       ) {
-        toasts.noRearCamera();
         set(() => ({ canSwitchCameraPerspective: false }));
-        return;
+        throw new Error("You don't have a rear facing camera to switch to.");
       }
     }
 
-    // stop older video track and remove it
+    // stop older video track and remove it and
+    // add new video track to the ui and to the webrtc connection
     const videoTrack = userStream.stream?.getVideoTracks()[0];
-    videoTrack?.stop();
+    const newVideoTrack = newUserStream.getVideoTracks()[0];
     if (videoTrack) {
+      videoTrack.stop();
       userStream.stream?.removeTrack(videoTrack);
     }
-
-    // add new video track to the ui and to the webrtc connection
-    const newVideoTrack = newUserStream.getVideoTracks()[0];
     userStream.stream?.addTrack(newVideoTrack);
+
     for (const k of Object.keys(peerConnections)) {
       const sender = peerConnections[k].peerConnection
         .getSenders()
@@ -723,7 +817,7 @@ export const useCallStore = create<Call>((set, get) => ({
     // modify the perspective
     set(() => ({
       cameraPerspective: newCameraPerspective,
-      shouldFlip: newCameraPerspective === "user",
+      shouldMirrorCamera: newCameraPerspective === "user",
     }));
   },
 }));
@@ -743,8 +837,8 @@ const getUserStream = async (
       echoCancellation: true,
     },
     video: {
-      width: lowDataMode ? { ideal: 360 } : { ideal: 1280 },
-      height: lowDataMode ? { ideal: 240 } : { ideal: 720 },
+      width: lowDataMode ? { ideal: 480 } : { ideal: 1280 },
+      height: lowDataMode ? { ideal: 360 } : { ideal: 720 },
       facingMode: perspective,
     },
   });
@@ -851,8 +945,6 @@ const getAspectRatio = (stream: MediaStream): number => {
     return defaultAspectRatio;
   }
   const settings = videoTracks[0].getSettings();
-
-  window.alert(JSON.stringify(settings, null, 2));
 
   if (settings.aspectRatio) return settings.aspectRatio;
 

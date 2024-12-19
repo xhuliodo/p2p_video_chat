@@ -14,7 +14,7 @@ const UserVideo: React.FC = () => {
     solo,
     isAudioEnabled,
     isCameraEnabled,
-    shouldFlip,
+    shouldMirrorCamera,
     switchAudio,
     switchCamera,
     userStream,
@@ -26,7 +26,7 @@ const UserVideo: React.FC = () => {
       switchAudio: state.switchAudio,
       isCameraEnabled: state.isCameraEnabled,
       switchCamera: state.switchCamera,
-      shouldFlip: state.shouldFlip,
+      shouldMirrorCamera: state.shouldMirrorCamera,
     })),
   );
 
@@ -71,7 +71,7 @@ const UserVideo: React.FC = () => {
             muted
             playsInline
             ref={userVideoRef}
-            className={`h-full w-full ${shouldFlip && "scale-x-[-1]"} object-cover`}
+            className={`h-full w-full ${shouldMirrorCamera && "scale-x-[-1]"} object-cover`}
           ></video>
         )}
       </div>

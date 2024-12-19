@@ -1,10 +1,11 @@
-import { FC, useState } from "react";
+import { FC } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCallStore } from "../state/call";
 import { Icon } from "@iconify/react";
 import { useAutoCollapse } from "../hooks/useAutoCollapse";
 import { toasts } from "../notifications/toasts";
 import { useShallow } from "zustand/shallow";
+import { toast } from "react-toastify";
 
 export const CallButtons: FC = () => {
   const {
@@ -60,7 +61,19 @@ export const CallButtons: FC = () => {
     navigate("/"); // Only navigate after endCall finishes
   };
 
-  const [isCameraSwitchDisabled, setIsCameraSwitchDisabled] = useState(false);
+  const onClickSwitchCamera = async () => {
+    try {
+      await switchCameraPerspective();
+    } catch (err: unknown) {
+      // Ensure 'e' is an error object before accessing properties
+      if (err instanceof Error) {
+        toast(err.message);
+      } else {
+        // Handle case where error is not an instance of Error
+        toast("An unknown error occurred");
+      }
+    }
+  };
 
   const {
     isCollapsed,
@@ -97,12 +110,8 @@ export const CallButtons: FC = () => {
           <button
             name="SwitchCamera"
             className="mb-5 flex h-14 w-14 transform-gpu items-center justify-center rounded-full bg-gray-500 p-3 text-white active:bg-gray-700 disabled:bg-gray-300"
-            onClick={async () => {
-              setIsCameraSwitchDisabled(true);
-              await switchCameraPerspective();
-              setIsCameraSwitchDisabled(false);
-            }}
-            disabled={!canSwitchCameraPerspective || isCameraSwitchDisabled}
+            onClick={onClickSwitchCamera}
+            disabled={!canSwitchCameraPerspective}
           >
             <Icon
               icon="material-symbols:flip-camera-ios"

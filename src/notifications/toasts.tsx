@@ -4,11 +4,14 @@ export const toasts = {
   linkCopied: () => {
     toast("Link Copied!");
   },
-  shareLink: () => {
-    toast("Share link with your buddy!");
+  connecting: () => {
+    toast("connecting", { autoClose: 1000 });
   },
-  noRearCamera: () => {
-    toast("You don't have a rear facing camera to switch to.");
+  connectionStatus: (status: string) => {
+    toast(status, { autoClose: 1000 });
+  },
+  reconnecting: () => {
+    toast("reconnecting...");
   },
   failedMessageDelivery: (all: boolean) => {
     toast(
@@ -23,5 +26,10 @@ export const toasts = {
   lowDataMode: (dataMode: boolean) => {
     const state = dataMode ? "on" : "off";
     toast(`Low data mode has been turned ${state}`);
+  },
+  lowDataModeFailed: () => {
+    toast(
+      "Low data mode was not turned on for all the participants, please try again.",
+    );
   },
 };
