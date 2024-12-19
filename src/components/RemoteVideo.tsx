@@ -1,10 +1,9 @@
-import { FC, useEffect, useMemo, useRef, useState } from "react";
+import { FC, useEffect, useMemo, useRef } from "react";
 import { useCallStore } from "../state/call";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { useWindowDimensions } from "../hooks/useWindowDimensions";
 import { useShallow } from "zustand/shallow";
 import { NetworkStatus } from "./NetworkStatus";
-import { Icon } from "@iconify/react/dist/iconify.js";
 
 export const RemoteVideos = () => {
   const { remoteStreams, solo } = useCallStore(
@@ -66,12 +65,6 @@ interface RemoteVideoProps {
 }
 const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-  const [zoom, setZoom] = useState(false);
-
-  const onClickSetZoom = () => {
-    setZoom((zoom) => !zoom);
-  };
-
   useEffect(() => {
     const remoteVideo = remoteVideoRef.current;
     if (remoteVideo) {
@@ -101,21 +94,11 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
   }, [remoteStream]);
   return (
     <div className="h-full w-full overflow-hidden rounded-md border-2">
-      <button
-        className="absolute left-5 top-5 z-10 h-10 w-10 rounded-md bg-gray-200 p-1"
-        onClick={onClickSetZoom}
-      >
-        {zoom ? (
-          <Icon icon="ic:baseline-zoom-out" className="h-full w-full" />
-        ) : (
-          <Icon icon="ic:baseline-zoom-in" className="h-full w-full" />
-        )}
-      </button>
       <video
         ref={remoteVideoRef}
         playsInline
         autoPlay
-        className={`h-full w-full ${zoom && "object-cover"}`}
+        className="h-full w-full"
       />
     </div>
   );
