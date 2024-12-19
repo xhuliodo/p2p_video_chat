@@ -21,70 +21,74 @@ export const NetworkStatus: FC<NetworkStatusProps> = ({ connectionKey }) => {
   const [bandwidth, setBandwidth] = useState<string>("Calculating...");
   const [showBandwidth, setShowBandwidth] = useState(false);
 
-  const checkNetworkQuality = async () => {
-    if (!peerConnection || peerConnection.iceConnectionState !== "connected") {
-      // console.log("Cannot check stats: Peer is disconnected or not connected");
-      setRemoteNetworkStatus(0);
-      return;
-    }
-
-    try {
-      const stats = await peerConnection.getStats();
-      let packetLossRate = 0;
-      let jitter = 0;
-      let roundTripTime = 0;
-
-      stats.forEach((report) => {
-        // calculate the bandwidth of the video connection
-        if (report.type === "inbound-rtp" && report.kind === "video") {
-          const bytes = report.bytesReceived;
-          const now = report.timestamp;
-
-          if (lastStats.current.bytes && lastStats.current.timestamp) {
-            const bitrate =
-              ((bytes - lastStats.current.bytes) * 8) /
-              ((now - lastStats.current.timestamp) / 1000); // bits per second
-            const bandwidthInMbps = bitrate / 1_000_000; // Convert to Mbps
-
-            setBandwidth(`${bandwidthInMbps.toFixed(2)} Mbps`);
-          }
-
-          lastStats.current = { bytes, timestamp: now };
-        }
-        // Analyze inbound-rtp stats for packet loss and jitter
-        if (report.type === "inbound-rtp") {
-          if (report.packetsReceived > 0) {
-            packetLossRate =
-              (report.packetsLost / report.packetsReceived) * 100;
-            jitter = report.jitter;
-          }
-        }
-        // Analyze candidate-pair stats for RTT (round-trip time)
-        if (report.type === "candidate-pair" && report.currentRoundTripTime) {
-          roundTripTime = report.currentRoundTripTime;
-        }
-      });
-
-      // Industry standard thresholds for video calling apps
-      const isPoorNetwork =
-        packetLossRate > 2 || jitter > 0.03 || roundTripTime > 0.3;
-
-      if (isPoorNetwork) {
-        setRemoteNetworkStatus((val) => val - 1);
-      } else {
-        setRemoteNetworkStatus((val) => (val >= 3 ? val : val + 1));
-      }
-    } catch (error) {
-      console.error("Error checking network quality: ", error);
-      setRemoteNetworkStatus(0);
-    }
-  };
   useEffect(() => {
-    const intervalId = setInterval(checkNetworkQuality, 1000);
+    const checkNetworkQuality = async () => {
+      if (
+        !peerConnection ||
+        peerConnection.iceConnectionState !== "connected"
+      ) {
+        // console.log("Cannot check stats: Peer is disconnected or not connected");
+        setRemoteNetworkStatus(0);
+        return;
+      }
+
+      try {
+        const stats = await peerConnection.getStats();
+        let packetLossRate = 0;
+        let jitter = 0;
+        let roundTripTime = 0;
+
+        stats.forEach((report) => {
+          // calculate the bandwidth of the video connection
+          if (report.type === "inbound-rtp" && report.kind === "video") {
+            const bytes = report.bytesReceived;
+            const now = report.timestamp;
+
+            if (lastStats.current.bytes && lastStats.current.timestamp) {
+              const bitrate =
+                ((bytes - lastStats.current.bytes) * 8) /
+                ((now - lastStats.current.timestamp) / 1000); // bits per second
+              const bandwidthInMbps = bitrate / 1_000_000; // Convert to Mbps
+
+              setBandwidth(`${bandwidthInMbps.toFixed(2)} Mbps`);
+            }
+
+            lastStats.current = { bytes, timestamp: now };
+          }
+          // Analyze inbound-rtp stats for packet loss and jitter
+          if (report.type === "inbound-rtp") {
+            if (report.packetsReceived > 0) {
+              packetLossRate =
+                (report.packetsLost / report.packetsReceived) * 100;
+              jitter = report.jitter;
+            }
+          }
+          // Analyze candidate-pair stats for RTT (round-trip time)
+          if (report.type === "candidate-pair" && report.currentRoundTripTime) {
+            roundTripTime = report.currentRoundTripTime;
+          }
+        });
+
+        // Industry standard thresholds for video calling apps
+        const isPoorNetwork =
+          packetLossRate > 2 || jitter > 0.03 || roundTripTime > 0.3;
+
+        if (isPoorNetwork) {
+          setRemoteNetworkStatus((val) => val - 1);
+        } else {
+          setRemoteNetworkStatus((val) => (val >= 3 ? val : val + 1));
+        }
+      } catch (error) {
+        console.error("Error checking network quality: ", error);
+        setRemoteNetworkStatus(0);
+      }
+    };
+
+    const intervalId = setInterval(checkNetworkQuality, 2500); // Check every 2.5 seconds
     return () => {
       clearInterval(intervalId);
     };
-  });
+  }, [peerConnection]);
 
   const remoteNetworkIcon = (remoteNetworkStatus: number): JSX.Element => {
     let iconName = "";

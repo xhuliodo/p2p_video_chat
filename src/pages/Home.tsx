@@ -82,7 +82,6 @@ export const Home = () => {
         position="top-center"
         style={{ width: "80%" }}
         progressStyle={{ background: "gray" }}
-        limit={3}
       />
     </div>
   );
