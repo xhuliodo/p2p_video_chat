@@ -7,11 +7,10 @@ export const router = createBrowserRouter([
   {
     path: "/",
     element: <Home />,
-    errorElement: <NotFound />,
   },
   {
     path: "/calls/:passphrase",
     element: <Call />,
-    errorElement: <NotFound />,
   },
+  { path: "*", element: <NotFound /> },
 ]);

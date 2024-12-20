@@ -81,7 +81,6 @@ interface Call {
   showMessages: boolean;
   newMessage: boolean;
   toggleMessages: () => void;
-  subscriptions: (() => void)[];
   endCall: () => Promise<void>;
   isAudioEnabled: boolean;
   switchAudio: () => void;
@@ -332,7 +331,14 @@ export const useCallStore = create<Call>((set, get) => ({
     } = get();
     const connectionKey = getConnectionKey(userId, participantId);
 
-    const newPeerConnection = await getPeerConnection();
+    let newPeerConnection: RTCPeerConnection;
+    try {
+      newPeerConnection = await getPeerConnection();
+    } catch (err: unknown) {
+      console.error("could not create new peer connection with err: ", { err });
+      toasts.somethingWentWrong();
+      return;
+    }
     // Add local stream tracks to the peer connection
     userStream.stream?.getTracks().forEach((track) => {
       if (userStream.stream) {
@@ -454,7 +460,14 @@ export const useCallStore = create<Call>((set, get) => ({
       await handleDataMode(dataMode, false);
     }
 
-    const newPeerConnection = await getPeerConnection();
+    let newPeerConnection: RTCPeerConnection;
+    try {
+      newPeerConnection = await getPeerConnection();
+    } catch (err: unknown) {
+      console.error("could not create new peer connection with err: ", { err });
+      toasts.somethingWentWrong();
+      return;
+    }
     // Add local stream tracks to the peer connection
     userStream.stream?.getTracks().forEach((track) => {
       if (userStream.stream) {
@@ -697,17 +710,10 @@ export const useCallStore = create<Call>((set, get) => ({
     }
     set(() => ({ showMessages: !showMessages }));
   },
-  subscriptions: [],
   endCall: async () => {
-    const {
-      deleteRemoteStream,
-      peerConnections,
-      deletePeerConnection,
-      conn,
-      subscriptions,
-    } = get();
+    const { deleteRemoteStream, peerConnections, deletePeerConnection, conn } =
+      get();
 
-    subscriptions.forEach((s) => s());
     Object.keys(peerConnections).forEach((pcKey) => {
       deleteRemoteStream(pcKey);
       deletePeerConnection(pcKey);
@@ -789,7 +795,7 @@ export const useCallStore = create<Call>((set, get) => ({
     if (newCameraPerspective === "environment") {
       const newTrackSettings = newUserStream.getVideoTracks()[0].getSettings();
       if (
-        !newTrackSettings.facingMode ||
+        !newTrackSettings.facingMode &&
         newTrackSettings.facingMode === "user"
       ) {
         set(() => ({ canSwitchCameraPerspective: false }));
@@ -891,19 +897,32 @@ const checkForBluetoothAudioDevices = async (
 };
 
 async function getPeerConnection(): Promise<RTCPeerConnection> {
+  if (
+    !process.env.STUN_SERVER_URL ||
+    !process.env.TURN_SERVER_URL ||
+    !process.env.TURN_SERVER_USERNAME ||
+    !process.env.TURN_SERVER_PASSWORD ||
+    !process.env.TURNS_SERVER_URL ||
+    !process.env.TURNS_SERVER_USERNAME ||
+    !process.env.TURNS_SERVER_PASSWORD
+  ) {
+    return Promise.reject(
+      new Error("STUN/TURN server env variables are not defined"),
+    );
+  }
   const iceServers = [
     // STUN server
-    { urls: "stun:turn.xhuliodo.xyz:3478" },
+    { urls: process.env.STUN_SERVER_URL },
     // TURN server
     {
-      urls: "turn:turn.xhuliodo.xyz:3478",
-      username: "Thud3578",
-      credential: "bbbX7qQuBSX7kUd5AWtLmouCW",
+      urls: process.env.TURN_SERVER_URL,
+      username: process.env.TURN_SERVER_USERNAME,
+      credential: process.env.TURN_SERVER_PASSWORD,
     },
     {
-      urls: "turns:turn.xhuliodo.xyz:5349",
-      username: "Thud3578",
-      credential: "bbbX7qQuBSX7kUd5AWtLmouCW",
+      urls: process.env.TURNS_SERVER_URL,
+      username: process.env.TURNS_SERVER_USERNAME,
+      credential: process.env.TURNS_SERVER_PASSWORD,
     },
   ];
   return new RTCPeerConnection({

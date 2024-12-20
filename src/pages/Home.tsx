@@ -19,7 +19,9 @@ export const Home = () => {
   const [passphrase, setPassphrase] = useState(v7());
   const [error, setError] = useState("");
   const regex = /^[a-zA-Z0-9-]+$/;
-  const handlePassphrase = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const onChangeHandlePassphrase = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const newPassphrase = event.target.value;
     setPassphrase(newPassphrase);
     if (!newPassphrase.length) {
@@ -31,7 +33,9 @@ export const Home = () => {
       return;
     }
     if (!regex.exec(newPassphrase)) {
-      setError("The passphrase can only contain letters, numbers and '-'.");
+      setError(
+        "The passphrase can only contain letters, numbers and and hyphens.",
+      );
       return;
     }
 
@@ -45,12 +49,12 @@ export const Home = () => {
   return (
     <div className="h-dvh w-screen">
       <div className="flex h-full flex-col items-center justify-center gap-5 bg-[#008B8B] md:gap-14">
-        <img className="-mb-7" src="logo.svg" />
+        <img className="-mb-7" src="logo.svg" alt="Logo" />
         <div className="flex w-[80%] flex-col items-center justify-center">
           <span className="text-center text-5xl text-white md:text-7xl">
             Video chat{" "}
             <b className="drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.5)]">
-              securily
+              securely
             </b>{" "}
             directly on your browser
           </span>
@@ -62,7 +66,7 @@ export const Home = () => {
               name="passphrase"
               placeholder="Type a secure passphrase or just start"
               className="h-12 w-full max-w-sm text-center text-lg placeholder:text-sm"
-              onChange={handlePassphrase}
+              onChange={onChangeHandlePassphrase}
             />
             <p className="text-red-900">{error}</p>
             <button

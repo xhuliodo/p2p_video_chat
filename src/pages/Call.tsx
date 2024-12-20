@@ -7,10 +7,15 @@ import { Messages } from "../components/Messages";
 import { DraggableAndResizableUserVideo } from "../components/UserVideo";
 import { RemoteVideos } from "../components/RemoteVideo";
 import { router } from "../routes";
+import { useShallow } from "zustand/shallow";
 
 export const Call = () => {
-  const endCall = useCallStore((state) => state.endCall);
-  const startCall = useCallStore((state) => state.startCall);
+  const { startCall, endCall } = useCallStore(
+    useShallow((state) => ({
+      startCall: state.startCall,
+      endCall: state.endCall,
+    })),
+  );
 
   const { passphrase } = useParams();
   useEffect(() => {
