@@ -260,7 +260,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }
 
     const newWebsocketConnection = new WebSocket(
-      "wss://" + import.meta.env.VITE_WEBSOCKET_URL + "/calls/" + passphrase,
+      "wss://" + import.meta.env.VITE_BACKEND_URL + "/calls/" + passphrase,
     );
     newWebsocketConnection.onopen = () => {
       const e = newNewParticipantEvent(userId);
@@ -333,12 +333,15 @@ export const useCallStore = create<Call>((set, get) => ({
 
     let newPeerConnection: RTCPeerConnection;
     try {
-      newPeerConnection = await getPeerConnection();
+      newPeerConnection = await getPeerConnection(userId);
     } catch (err: unknown) {
       console.error("could not create new peer connection with err: ", { err });
       toasts.somethingWentWrong();
       return;
     }
+    newPeerConnection.onicecandidateerror = (ev) => {
+      console.error("could not gather ice candidates with err: ", { ev });
+    };
     // Add local stream tracks to the peer connection
     userStream.stream?.getTracks().forEach((track) => {
       if (userStream.stream) {
@@ -462,12 +465,15 @@ export const useCallStore = create<Call>((set, get) => ({
 
     let newPeerConnection: RTCPeerConnection;
     try {
-      newPeerConnection = await getPeerConnection();
+      newPeerConnection = await getPeerConnection(userId);
     } catch (err: unknown) {
       console.error("could not create new peer connection with err: ", { err });
       toasts.somethingWentWrong();
       return;
     }
+    newPeerConnection.onicecandidateerror = (ev) => {
+      console.error("could not gather ice candidates with err: ", { ev });
+    };
     // Add local stream tracks to the peer connection
     userStream.stream?.getTracks().forEach((track) => {
       if (userStream.stream) {
@@ -896,33 +902,37 @@ const checkForBluetoothAudioDevices = async (
   return stream;
 };
 
-async function getPeerConnection(): Promise<RTCPeerConnection> {
-  if (
-    !process.env.STUN_SERVER_URL ||
-    !process.env.TURN_SERVER_URL ||
-    !process.env.TURN_SERVER_USERNAME ||
-    !process.env.TURN_SERVER_PASSWORD ||
-    !process.env.TURNS_SERVER_URL ||
-    !process.env.TURNS_SERVER_USERNAME ||
-    !process.env.TURNS_SERVER_PASSWORD
-  ) {
-    return Promise.reject(
-      new Error("STUN/TURN server env variables are not defined"),
+async function getPeerConnection(userId: string): Promise<RTCPeerConnection> {
+  let turnCredentials = {
+    username: "user",
+    password: "password",
+    expiresAt: 0,
+  };
+  try {
+    // Attempt to fetch TURN credentials from primary service
+    const res = await fetch(
+      `https://${import.meta.env.VITE_BACKEND_URL}/turn/credentials?userId=${userId}`,
     );
+    if (res.ok) {
+      turnCredentials = await res.json();
+    }
+  } catch (e) {
+    console.log("could not get turn credentials with err: ", { e });
   }
+
   const iceServers = [
     // STUN server
-    { urls: process.env.STUN_SERVER_URL },
+    { urls: import.meta.env.STUN_SERVER_URL },
     // TURN server
     {
-      urls: process.env.TURN_SERVER_URL,
-      username: process.env.TURN_SERVER_USERNAME,
-      credential: process.env.TURN_SERVER_PASSWORD,
+      urls: import.meta.env.TURN_SERVER_URL,
+      username: turnCredentials.username,
+      credential: turnCredentials.password,
     },
     {
-      urls: process.env.TURNS_SERVER_URL,
-      username: process.env.TURNS_SERVER_USERNAME,
-      credential: process.env.TURNS_SERVER_PASSWORD,
+      urls: import.meta.env.TURNS_SERVER_URL,
+      username: turnCredentials.username,
+      credential: turnCredentials.password,
     },
   ];
   return new RTCPeerConnection({
