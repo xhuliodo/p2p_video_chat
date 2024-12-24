@@ -717,16 +717,26 @@ export const useCallStore = create<Call>((set, get) => ({
     set(() => ({ showMessages: !showMessages }));
   },
   endCall: async () => {
-    const { deleteRemoteStream, peerConnections, deletePeerConnection, conn } =
-      get();
+    const {
+      deleteRemoteStream,
+      userStream,
+      peerConnections,
+      deletePeerConnection,
+      conn,
+    } = get();
 
     Object.keys(peerConnections).forEach((pcKey) => {
       deleteRemoteStream(pcKey);
       deletePeerConnection(pcKey);
     });
+    userStream.stream?.getTracks().forEach((track) => track.stop());
 
     conn?.close();
-    set(() => ({ passphrase: v7(), conn: null }));
+    set(() => ({
+      passphrase: v7(),
+      conn: null,
+      userStream: { stream: null, aspectRatio: 1 },
+    }));
   },
   isAudioEnabled: true,
   switchAudio: async () => {
@@ -798,15 +808,15 @@ export const useCallStore = create<Call>((set, get) => ({
     }
 
     // check if the user can switch for future uses
-    if (newCameraPerspective === "environment") {
-      const newTrackSettings = newUserStream.getVideoTracks()[0].getSettings();
-      if (
-        !newTrackSettings.facingMode &&
-        newTrackSettings.facingMode === "user"
-      ) {
-        set(() => ({ canSwitchCameraPerspective: false }));
-        throw new Error("You don't have a rear facing camera to switch to.");
-      }
+    const newTrackSettings = newUserStream.getVideoTracks()[0].getSettings();
+    console.log({ newTrackSettings, newCameraPerspective });
+    if (
+      !newTrackSettings.facingMode &&
+      newTrackSettings.facingMode !== newCameraPerspective
+    ) {
+      newUserStream.getTracks().forEach((t) => t.stop());
+      set(() => ({ canSwitchCameraPerspective: false }));
+      throw new Error("You don't have a rear facing camera to switch to.");
     }
 
     // stop older video track and remove it and
@@ -842,13 +852,13 @@ const getUserStream = async (
   lowDataMode: boolean,
 ) => {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
+    audio: audio && {
       ...(audioDeviceId ? { deviceId: audioDeviceId } : {}),
       noiseSuppression: true,
       autoGainControl: true,
       echoCancellation: true,
     },
-    video: {
+    video: video && {
       width: lowDataMode ? { ideal: 480 } : { ideal: 1280 },
       height: lowDataMode ? { ideal: 360 } : { ideal: 720 },
       facingMode: perspective,
@@ -935,7 +945,6 @@ async function getPeerConnection(userId: string): Promise<RTCPeerConnection> {
       credential: turnCredentials.password,
     },
   ];
-  console.log({ iceServers });
   return new RTCPeerConnection({
     iceServers,
     iceCandidatePoolSize: 5,

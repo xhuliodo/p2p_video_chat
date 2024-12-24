@@ -55,10 +55,10 @@ export const CallButtons: FC = () => {
     console.log("leaving call");
     try {
       await endCall(); // Wait for endCall to complete
+      navigate("/"); // Only navigate after endCall finishes
     } catch (e) {
       console.log("while leaving call caught error:", e);
     }
-    navigate("/"); // Only navigate after endCall finishes
   };
 
   const onClickSwitchCamera = async () => {

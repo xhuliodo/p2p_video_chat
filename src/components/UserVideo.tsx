@@ -62,10 +62,10 @@ const UserVideo: React.FC = () => {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-auto items-center justify-center overflow-hidden">
-        {!userStream && (
+        {!userStream.stream && (
           <LoadingSpinner className="h-10 w-10 md:h-20 md:w-20" />
         )}
-        {!!userStream && (
+        {!!userStream.stream && (
           <video
             id="user"
             muted
