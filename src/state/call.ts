@@ -922,15 +922,15 @@ async function getPeerConnection(userId: string): Promise<RTCPeerConnection> {
 
   const iceServers = [
     // STUN server
-    { urls: import.meta.env.STUN_SERVER_URL },
+    { urls: import.meta.env.VITE_STUN_SERVER_URL },
     // TURN server
     {
-      urls: import.meta.env.TURN_SERVER_URL,
+      urls: import.meta.env.VITE_TURN_SERVER_URL,
       username: turnCredentials.username,
       credential: turnCredentials.password,
     },
     {
-      urls: import.meta.env.TURNS_SERVER_URL,
+      urls: import.meta.env.VITE_TURNS_SERVER_URL,
       username: turnCredentials.username,
       credential: turnCredentials.password,
     },
