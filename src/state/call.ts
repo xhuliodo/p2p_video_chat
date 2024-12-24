@@ -729,9 +729,11 @@ export const useCallStore = create<Call>((set, get) => ({
       deleteRemoteStream(pcKey);
       deletePeerConnection(pcKey);
     });
-    userStream.stream?.getTracks().forEach((track) => track.stop());
 
     conn?.close();
+
+    userStream.stream?.getTracks().forEach((track) => track.stop());
+
     set(() => ({
       passphrase: v7(),
       conn: null,
