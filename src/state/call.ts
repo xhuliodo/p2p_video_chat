@@ -935,6 +935,7 @@ async function getPeerConnection(userId: string): Promise<RTCPeerConnection> {
       credential: turnCredentials.password,
     },
   ];
+  console.log({ iceServers });
   return new RTCPeerConnection({
     iceServers,
     iceCandidatePoolSize: 5,
