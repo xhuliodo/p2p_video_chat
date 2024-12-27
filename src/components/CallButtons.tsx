@@ -52,13 +52,16 @@ export const CallButtons: FC = () => {
 
   const navigate = useNavigate();
   const onClickLeave = async () => {
-    console.log("leaving call");
+    console.log("Leaving the call...");
     try {
       await endCall(); // Wait for endCall to complete
-      navigate("/"); // Only navigate after endCall finishes
+      console.log("Call ended successfully");
     } catch (e) {
-      console.log("while leaving call caught error:", e);
+      console.error("could not leave call with error:", { e });
+      toasts.somethingWentWrong();
     }
+
+    navigate("/"); // Only navigate after endCall finishes
   };
 
   const onClickSwitchCamera = async () => {

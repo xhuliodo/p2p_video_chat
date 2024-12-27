@@ -45,7 +45,7 @@ export const Call = () => {
   }, []);
 
   useEffect(() => {
-    const handleBeforeUnload = async () => await endCall();
+    const handleBeforeUnload = async () => endCall();
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {

@@ -18,6 +18,19 @@ import {
   newDataModeEvent,
   DataModeResponse,
 } from "./events";
+import { delay } from "./helpers";
+import {
+  getPeerConnection,
+  getConnectionKey,
+  getIsOfferer,
+  handleBitrate,
+} from "./peerConnection";
+import {
+  getUserStream,
+  getUserStreamVideo,
+  getAspectRatio,
+  checkForBluetoothAudioDevices,
+} from "./userMedia";
 
 type CameraPerspective = "environment" | "user";
 
@@ -54,6 +67,10 @@ interface Call {
   addPeerConnection: (key: string, peerConnection: RTCPeerConnection) => void;
   deletePeerConnection: (key: string) => void;
   startCall: (passphrase: string) => Promise<void>;
+  handleWebsocketConnection: (
+    passphrase: string,
+    userId: string,
+  ) => Promise<WebSocket | null>;
   handleOffer: (participantId: string) => Promise<void>;
   handleAnswer: (
     participantId: string,
@@ -112,9 +129,7 @@ export const useCallStore = create<Call>((set, get) => ({
       conn,
     } = get();
 
-    const stream = await getUserStream(
-      false,
-      "",
+    const stream = await getUserStreamVideo(
       isCameraEnabled,
       cameraPerspective,
       dataMode,
@@ -128,9 +143,11 @@ export const useCallStore = create<Call>((set, get) => ({
     }
     userStream.stream?.addTrack(newVideoTrack);
 
+    // inform the peer connections about the new video track settings
     let failures = 0;
     for (const k of Object.keys(peerConnections)) {
       try {
+        // update the bitrate settings for the video track for all senders
         const sender = peerConnections[k].peerConnection
           .getSenders()
           .find((s) => s.track?.kind === "video");
@@ -151,7 +168,7 @@ export const useCallStore = create<Call>((set, get) => ({
           await sender.setParameters(parameters);
         }
       } catch (err: unknown) {
-        console.log("could not set parameters with err: ", { err });
+        console.error("could not set parameters with err: ", { err });
         failures++;
         break;
       }
@@ -164,6 +181,7 @@ export const useCallStore = create<Call>((set, get) => ({
       set(() => ({ lowDataMode: dataMode }));
     }
 
+    // inform the user about the success or failure of the data mode switch
     if (failures) {
       toasts.lowDataModeFailed();
     } else {
@@ -215,7 +233,7 @@ export const useCallStore = create<Call>((set, get) => ({
           delete draft.peerConnections[key];
         }
 
-        if (Object.keys(draft.peerConnections).length === 0) {
+        if (!Object.keys(draft.peerConnections).length) {
           draft.solo = true;
           draft.canSendMessage = false;
           draft.showMessages = false;
@@ -230,35 +248,66 @@ export const useCallStore = create<Call>((set, get) => ({
       isCameraEnabled,
       cameraPerspective,
       userId,
-      handleAnswer,
-      handleOffer,
-      handleAnswerResponse,
-      handleIceCandidates,
-      handleParticipantLeft,
+      handleWebsocketConnection,
       lowDataMode,
-      handleDataMode,
     } = get();
     const userStream: VideoStream = { stream: null, aspectRatio: 1 };
     try {
       userStream.stream = await getUserStream(
         isAudioEnabled,
-        "",
         isCameraEnabled,
         cameraPerspective,
         lowDataMode,
-      );
-      userStream.stream = await checkForBluetoothAudioDevices(
-        userStream.stream,
       );
     } catch {
       throw new Error("Permissions of camera and audio are required!");
     }
     userStream.aspectRatio = getAspectRatio(userStream.stream);
+    set(() => ({ userStream }));
+    // Check for Bluetooth audio devices and replace the audio tracks if available
+    // Timeout is needed to ensure smothness of the ux (displaying video and audio ASAP)
+    // and then checking for the audio devices
+    setTimeout(() => {
+      const us = get().userStream.stream;
+      if (us) {
+        checkForBluetoothAudioDevices(isAudioEnabled, us);
+      }
+    }, 250);
 
+    let conn: null | WebSocket = null;
+    try {
+      conn = await handleWebsocketConnection(passphrase, userId);
+    } catch (e) {
+      console.error("could not create websocket connection with err: ", { e });
+      throw e;
+    }
+
+    set(() => ({
+      passphrase,
+      conn,
+    }));
+  },
+  handleWebsocketConnection: async (
+    passphrase: string,
+    userId: string,
+  ): Promise<WebSocket | null> => {
     if (!window["WebSocket"]) {
       throw new Error("Your browser does not support websockets!");
     }
 
+    if (!import.meta.env.VITE_BACKEND_URL) {
+      console.error("Missing required environment variable for backend URL");
+      throw new Error("Something went wrong, please try again later!");
+    }
+
+    const {
+      handleOffer,
+      handleAnswer,
+      handleAnswerResponse,
+      handleIceCandidates,
+      handleParticipantLeft,
+      handleDataMode,
+    } = get();
     const newWebsocketConnection = new WebSocket(
       "wss://" + import.meta.env.VITE_BACKEND_URL + "/calls/" + passphrase,
     );
@@ -272,7 +321,7 @@ export const useCallStore = create<Call>((set, get) => ({
       }
     };
     newWebsocketConnection.onerror = (e) => {
-      console.log("WebSocket error: ", e);
+      console.error("WebSocket error: ", { e });
     };
     newWebsocketConnection.onmessage = async (e) => {
       const event: WSEvent = JSON.parse(e.data);
@@ -312,11 +361,7 @@ export const useCallStore = create<Call>((set, get) => ({
       }
     };
 
-    set(() => ({
-      userStream,
-      passphrase,
-      conn: newWebsocketConnection,
-    }));
+    return newWebsocketConnection;
   },
   handleOffer: async (participantId: string) => {
     const {
@@ -361,29 +406,9 @@ export const useCallStore = create<Call>((set, get) => ({
     newPeerConnection.oniceconnectionstatechange = async () => {
       const state = newPeerConnection.iceConnectionState;
       toasts.connectionStatus(state);
+      // once the connection is established, set the max bitrate for the video track
       if (state === "connected") {
-        const sender = newPeerConnection
-          .getSenders()
-          .find((s) => s.track?.kind === "video");
-        if (sender) {
-          const parameters = sender.getParameters();
-          if (!parameters.encodings) {
-            parameters.encodings = [{}];
-          }
-
-          if (get().lowDataMode) {
-            parameters.encodings[0].maxBitrate = constants.sdMaxBitrate; // Disable bandwidth usage
-          } else {
-            parameters.encodings[0].maxBitrate = constants.hdMaxBitrate;
-          }
-
-          sender
-            .setParameters(parameters)
-            .then(() => console.log("maxbitrate set"))
-            .catch(() => console.log("could not set parameter for bitrate"));
-        } else {
-          console.log("could not find send to set bitrate");
-        }
+        handleBitrate(newPeerConnection, lowDataMode);
       }
       if (
         state === "failed" ||
@@ -413,7 +438,7 @@ export const useCallStore = create<Call>((set, get) => ({
       console.log("Message channel is closed");
     };
     messageChannel.onerror = (e) => {
-      console.log("something went wrong: ", e);
+      console.error("message channel something went wrong with err: ", { e });
     };
     messageChannel.onmessage = receiveMessage;
 
@@ -459,6 +484,7 @@ export const useCallStore = create<Call>((set, get) => ({
     }
 
     // handle the data mode as soon as possible in the peerConnection lifecycle
+    // and also do nothing if it is already in the correct mode
     if (lowDataMode !== dataMode) {
       await handleDataMode(dataMode, false);
     }
@@ -494,29 +520,9 @@ export const useCallStore = create<Call>((set, get) => ({
     newPeerConnection.oniceconnectionstatechange = async () => {
       const state = newPeerConnection.iceConnectionState;
       toasts.connectionStatus(state);
+      // once the connection is established, set the max bitrate for the video track
       if (state === "connected") {
-        const sender = newPeerConnection
-          .getSenders()
-          .find((s) => s.track?.kind === "video");
-        if (sender) {
-          const parameters = sender.getParameters();
-          if (!parameters.encodings) {
-            parameters.encodings = [{}];
-          }
-
-          if (get().lowDataMode) {
-            parameters.encodings[0].maxBitrate = constants.sdMaxBitrate; // Disable bandwidth usage
-          } else {
-            parameters.encodings[0].maxBitrate = constants.hdMaxBitrate;
-          }
-
-          sender
-            .setParameters(parameters)
-            .then(() => console.log("maxbitrate set"))
-            .catch(() => console.log("could not set parameter for bitrate"));
-        } else {
-          console.log("could not find send to set bitrate");
-        }
+        handleBitrate(newPeerConnection, dataMode);
       }
       if (
         state === "failed" ||
@@ -548,7 +554,7 @@ export const useCallStore = create<Call>((set, get) => ({
         set(() => ({ canSendMessage: false, showMessages: false }));
       };
       messageChannel.onerror = (e) => {
-        console.log("something went wrong: ", e);
+        console.error("message channel something went wrong: ", e);
       };
       messageChannel.onmessage = get().receiveMessage;
 
@@ -570,7 +576,6 @@ export const useCallStore = create<Call>((set, get) => ({
 
     let a: RTCSessionDescription;
     try {
-      console.log({ answer });
       const answerJson = JSON.parse(answer);
       a = new RTCSessionDescription(answerJson);
     } catch (err: unknown) {
@@ -583,7 +588,7 @@ export const useCallStore = create<Call>((set, get) => ({
     if (peerConnections[connectionKey]) {
       peerConnections[connectionKey].peerConnection.setRemoteDescription(a);
     } else {
-      console.log("answer came before peer connection was establised");
+      console.error("answer came before peer connection was establised");
     }
   },
   handleIceCandidates: async (participantId: string, iceCandidate: string) => {
@@ -605,7 +610,7 @@ export const useCallStore = create<Call>((set, get) => ({
     const tryFor = 3;
     const addIceCandidateEventually = (triesLeft: number) => {
       if (!triesLeft) {
-        console.log(`Failed to set ICE candidate after ${tryFor} attempts`);
+        console.error(`Failed to set ICE candidate after ${tryFor} attempts`);
         return;
       }
 
@@ -661,7 +666,7 @@ export const useCallStore = create<Call>((set, get) => ({
         if (draft.peerConnections[key]) {
           draft.peerConnections[key].messageChannel = messageChannel;
         } else {
-          console.log(
+          console.error(
             "message channel was opened before the connection was established",
           );
         }
@@ -700,7 +705,7 @@ export const useCallStore = create<Call>((set, get) => ({
       }));
     } catch (e: unknown) {
       failures++;
-      console.log("could not send message with err:", { e });
+      console.error("could not send message with err:", { e });
     }
     if (failures) {
       toasts.failedMessageDelivery(failures === participantsCount);
@@ -717,22 +722,17 @@ export const useCallStore = create<Call>((set, get) => ({
     set(() => ({ showMessages: !showMessages }));
   },
   endCall: async () => {
-    const {
-      deleteRemoteStream,
-      userStream,
-      peerConnections,
-      deletePeerConnection,
-      conn,
-    } = get();
+    const { deleteRemoteStream, peerConnections, deletePeerConnection, conn } =
+      get();
 
-    Object.keys(peerConnections).forEach((pcKey) => {
-      deleteRemoteStream(pcKey);
-      deletePeerConnection(pcKey);
-    });
+    for (const [key] of Object.entries(peerConnections)) {
+      deleteRemoteStream(key);
+      deletePeerConnection(key);
+      // add a delay to not overwhwelm the frontend with too many changes
+      await delay(200).then(() => {});
+    }
 
     conn?.close();
-
-    userStream.stream?.getTracks().forEach((track) => track.stop());
 
     set(() => ({
       passphrase: v7(),
@@ -790,17 +790,20 @@ export const useCallStore = create<Call>((set, get) => ({
   shouldMirrorCamera: true,
   canSwitchCameraPerspective: true,
   switchCameraPerspective: async () => {
-    const { peerConnections, cameraPerspective, userStream, lowDataMode } =
-      get();
+    const {
+      peerConnections,
+      cameraPerspective,
+      isCameraEnabled,
+      userStream,
+      lowDataMode,
+    } = get();
     const newCameraPerspective =
       cameraPerspective === "user" ? "environment" : "user";
 
     let newUserStream: MediaStream;
     try {
-      newUserStream = await getUserStream(
-        false,
-        "",
-        true,
+      newUserStream = await getUserStreamVideo(
+        isCameraEnabled,
         newCameraPerspective,
         lowDataMode,
       );
@@ -811,7 +814,6 @@ export const useCallStore = create<Call>((set, get) => ({
 
     // check if the user can switch for future uses
     const newTrackSettings = newUserStream.getVideoTracks()[0].getSettings();
-    console.log({ newTrackSettings, newCameraPerspective });
     if (
       !newTrackSettings.facingMode &&
       newTrackSettings.facingMode !== newCameraPerspective
@@ -845,149 +847,3 @@ export const useCallStore = create<Call>((set, get) => ({
     }));
   },
 }));
-
-const getUserStream = async (
-  audio: boolean,
-  audioDeviceId: string,
-  video: boolean,
-  perspective: "environment" | "user",
-  lowDataMode: boolean,
-) => {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: audio && {
-      ...(audioDeviceId ? { deviceId: audioDeviceId } : {}),
-      noiseSuppression: true,
-      autoGainControl: true,
-      echoCancellation: true,
-    },
-    video: video && {
-      width: lowDataMode ? { ideal: 480 } : { ideal: 1280 },
-      height: lowDataMode ? { ideal: 360 } : { ideal: 720 },
-      facingMode: perspective,
-    },
-  });
-
-  if (!audio) {
-    stream.getAudioTracks().forEach((a) => (a.enabled = false));
-  }
-
-  if (!video) {
-    stream.getVideoTracks().forEach((v) => (v.enabled = false));
-  }
-
-  return stream;
-};
-
-/**
- * checkForBluetoothAudioDevices check if there are any connected and active bluetooth
- * devices connected at the start of the call. if there are, it replaces it. this function
- * solves this issue encountered on mobile only.
- */
-const checkForBluetoothAudioDevices = async (
-  stream: MediaStream,
-): Promise<MediaStream> => {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const audioDevices = devices
-    .filter((d) => d.kind === "audioinput")
-    .filter((d) => {
-      const label = d.label.toLowerCase();
-      return label.includes("airpods") || label.includes("bluetooth");
-    });
-  if (audioDevices.length) {
-    stream.getAudioTracks().forEach((t) => {
-      t.stop();
-      stream.removeTrack(t);
-    });
-
-    const bluetoothDeviceStream = await getUserStream(
-      true,
-      audioDevices[0].deviceId,
-      false,
-      "user",
-      false,
-    );
-    bluetoothDeviceStream.getAudioTracks().forEach((t) => {
-      stream.addTrack(t);
-    });
-  }
-
-  return stream;
-};
-
-async function getPeerConnection(userId: string): Promise<RTCPeerConnection> {
-  let turnCredentials = {
-    username: "user",
-    password: "password",
-    expiresAt: 0,
-  };
-  try {
-    // Attempt to fetch TURN credentials from primary service
-    const res = await fetch(
-      `https://${import.meta.env.VITE_BACKEND_URL}/turn/credentials?userId=${userId}`,
-    );
-    if (res.ok) {
-      turnCredentials = await res.json();
-    }
-  } catch (e) {
-    console.log("could not get turn credentials with err: ", { e });
-  }
-
-  const iceServers = [
-    // STUN server
-    { urls: import.meta.env.VITE_STUN_SERVER_URL },
-    // TURN server
-    {
-      urls: import.meta.env.VITE_TURN_SERVER_URL,
-      username: turnCredentials.username,
-      credential: turnCredentials.password,
-    },
-    {
-      urls: import.meta.env.VITE_TURNS_SERVER_URL,
-      username: turnCredentials.username,
-      credential: turnCredentials.password,
-    },
-  ];
-  return new RTCPeerConnection({
-    iceServers,
-    iceCandidatePoolSize: 5,
-  });
-}
-
-const getConnectionKey = (id: string, otherId: string): string => {
-  let key: string;
-
-  if (id < otherId) {
-    // using the "_" character to separate the uuids
-    key = id + "_" + otherId;
-  } else {
-    key = otherId + "_" + id;
-  }
-
-  return key;
-};
-
-// first id should be the current user's id
-const getIsOfferer = (id: string, otherId: string): boolean => {
-  // with id being uuidv7, timestamp is included, so the older user will always create offers
-  // connection keys will also be created with the older id being first
-  // note: "older" means older in time.
-  if (id < otherId) {
-    return true;
-  }
-
-  return false;
-};
-
-const getAspectRatio = (stream: MediaStream): number => {
-  const defaultAspectRatio = 16 / 9;
-  const videoTracks = stream.getVideoTracks();
-  if (!videoTracks.length) {
-    console.log("could not get video track to calculate aspect ratio");
-    return defaultAspectRatio;
-  }
-  const settings = videoTracks[0].getSettings();
-
-  if (settings.aspectRatio) return settings.aspectRatio;
-
-  return (settings.width || 1) / (settings.height || 1);
-};
