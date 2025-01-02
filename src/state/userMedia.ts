@@ -127,5 +127,9 @@ export const getAspectRatio = (stream: MediaStream): number => {
 
   if (settings.aspectRatio) return settings.aspectRatio;
 
+  if (settings.width && settings.height) {
+    return settings.width / settings.height;
+  }
+
   return (settings.width || 1) / (settings.height || 1);
 };
