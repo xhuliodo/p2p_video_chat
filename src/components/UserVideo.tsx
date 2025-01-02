@@ -10,25 +10,14 @@ import { Icon } from "@iconify/react";
 import { useShallow } from "zustand/shallow";
 
 const UserVideo: React.FC = () => {
-  const {
-    solo,
-    isAudioEnabled,
-    isCameraEnabled,
-    shouldMirrorCamera,
-    switchAudio,
-    switchCamera,
-    userStream,
-  } = useCallStore(
-    useShallow((state) => ({
-      solo: state.solo,
-      userStream: state.userStream,
-      isAudioEnabled: state.isAudioEnabled,
-      switchAudio: state.switchAudio,
-      isCameraEnabled: state.isCameraEnabled,
-      switchCamera: state.switchCamera,
-      shouldMirrorCamera: state.shouldMirrorCamera,
-    })),
-  );
+  const { shouldMirrorCamera, userStream, setUserStreamAspectRatio } =
+    useCallStore(
+      useShallow((state) => ({
+        shouldMirrorCamera: state.shouldMirrorCamera,
+        userStream: state.userStream,
+        setUserStreamAspectRatio: state.setUserStreamAspectRatio,
+      })),
+    );
 
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
@@ -45,6 +34,7 @@ const UserVideo: React.FC = () => {
           .catch((error) =>
             console.error("Failed to play user video with error:", error),
           );
+        setUserStreamAspectRatio(userVideo.videoWidth / userVideo.videoHeight);
       };
       // Listen for loadedmetadata event, then play video
       userVideo.addEventListener("loadedmetadata", playVideo);
@@ -57,7 +47,7 @@ const UserVideo: React.FC = () => {
         userVideo.srcObject = null;
       };
     }
-  }, [userStream]);
+  }, [setUserStreamAspectRatio, userStream.stream]);
 
   return (
     <div className="flex h-full flex-col">
@@ -75,46 +65,61 @@ const UserVideo: React.FC = () => {
           ></video>
         )}
       </div>
+      <UserVideoButtons />
+    </div>
+  );
+};
 
-      <div className="stopDrag flex place-content-evenly items-center">
-        <button
-          onClick={switchAudio}
-          className="flex w-[50%] items-center justify-center"
-        >
-          <div className="flex items-center gap-[2px] text-white md:gap-1">
-            {isAudioEnabled ? (
-              <Icon
-                icon="material-symbols:mic"
-                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
-              />
-            ) : (
-              <Icon
-                icon="material-symbols:mic-off"
-                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
-              />
-            )}
-          </div>
-        </button>
-        <span className="text-white">|</span>
-        <button
-          onClick={switchCamera}
-          className="flex w-[50%] items-center justify-center text-white"
-        >
-          <div className="flex items-center gap-[2px] md:gap-1">
-            {isCameraEnabled ? (
-              <Icon
-                icon="mdi:video"
-                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
-              />
-            ) : (
-              <Icon
-                icon="mdi:video-off"
-                className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
-              />
-            )}
-          </div>
-        </button>
-      </div>
+const UserVideoButtons: React.FC = () => {
+  const { solo, isAudioEnabled, isCameraEnabled, switchAudio, switchCamera } =
+    useCallStore(
+      useShallow((state) => ({
+        solo: state.solo,
+        isAudioEnabled: state.isAudioEnabled,
+        switchAudio: state.switchAudio,
+        isCameraEnabled: state.isCameraEnabled,
+        switchCamera: state.switchCamera,
+      })),
+    );
+  return (
+    <div className="stopDrag flex place-content-evenly items-center">
+      <button
+        onClick={switchAudio}
+        className="flex w-[50%] items-center justify-center"
+      >
+        <div className="flex items-center gap-[2px] text-white md:gap-1">
+          {isAudioEnabled ? (
+            <Icon
+              icon="material-symbols:mic"
+              className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+            />
+          ) : (
+            <Icon
+              icon="material-symbols:mic-off"
+              className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+            />
+          )}
+        </div>
+      </button>
+      <span className="text-white">|</span>
+      <button
+        onClick={switchCamera}
+        className="flex w-[50%] items-center justify-center text-white"
+      >
+        <div className="flex items-center gap-[2px] md:gap-1">
+          {isCameraEnabled ? (
+            <Icon
+              icon="mdi:video"
+              className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+            />
+          ) : (
+            <Icon
+              icon="mdi:video-off"
+              className={`${solo ? "h-7 w-7" : "h-5 w-5"}`}
+            />
+          )}
+        </div>
+      </button>
     </div>
   );
 };

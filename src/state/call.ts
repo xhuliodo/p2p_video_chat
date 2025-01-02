@@ -28,7 +28,6 @@ import {
 import {
   getUserStream,
   getUserStreamVideo,
-  getAspectRatio,
   checkForBluetoothAudioDevices,
 } from "./userMedia";
 
@@ -60,6 +59,7 @@ interface Call {
   switchDataMode: () => void;
   handleDataMode: (dataMode: boolean, initiator: boolean) => Promise<void>;
   userStream: VideoStream;
+  setUserStreamAspectRatio: (aspectRatio: number) => void;
   remoteStreams: Record<string, MediaStream>;
   addRemoteStream: (key: string, stream: MediaStream) => void;
   deleteRemoteStream: (key: string) => void;
@@ -189,6 +189,11 @@ export const useCallStore = create<Call>((set, get) => ({
     }
   },
   userStream: { stream: null, aspectRatio: 1 },
+  setUserStreamAspectRatio: (aspectRatio: number) => {
+    set((state) => ({
+      userStream: { ...state.userStream, aspectRatio },
+    }));
+  },
   remoteStreams: {},
   addRemoteStream: (key: string, stream: MediaStream) => {
     set((state) =>
@@ -262,7 +267,6 @@ export const useCallStore = create<Call>((set, get) => ({
     } catch {
       throw new Error("Permissions of camera and audio are required!");
     }
-    userStream.aspectRatio = getAspectRatio(userStream.stream);
     set(() => ({ userStream }));
     // Check for Bluetooth audio devices and replace the audio tracks if available
     // Timeout is needed to ensure smothness of the ux (displaying video and audio ASAP)

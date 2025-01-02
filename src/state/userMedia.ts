@@ -110,26 +110,3 @@ export const getUserStreamAudio = async (
 
   return stream;
 };
-
-/**
- * Calculates the aspect ratio of the provided media stream. If the aspect ratio is not available
- * in the stream's settings, it calculates it using the width and height of the video track.
- * If the width or height is not available, it returns the default aspect ratio of 16:9.
- */
-export const getAspectRatio = (stream: MediaStream): number => {
-  const defaultAspectRatio = 16 / 9;
-  const videoTracks = stream.getVideoTracks();
-  if (!videoTracks.length) {
-    console.log("could not get video track to calculate aspect ratio");
-    return defaultAspectRatio;
-  }
-  const settings = videoTracks[0].getSettings();
-
-  if (settings.aspectRatio) return settings.aspectRatio;
-
-  if (settings.width && settings.height) {
-    return settings.width / settings.height;
-  }
-
-  return (settings.width || 1) / (settings.height || 1);
-};
