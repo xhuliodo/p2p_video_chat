@@ -3,7 +3,7 @@ import { useCallStore } from "../state/call";
 import { Icon } from "@iconify/react";
 import { useShallow } from "zustand/shallow";
 
-export const Messages: FC = () => {
+export const MessagesModal: FC = () => {
   const {
     showMessages,
     toggleMessages,
@@ -23,6 +23,7 @@ export const Messages: FC = () => {
       clearUsername: state.clearUsername,
     })),
   );
+
   const wholeDivRef = useRef<HTMLDivElement | null>(null);
   // Handle outside clicks/touches
   const handleOutsideEvent = useCallback(
@@ -48,7 +49,6 @@ export const Messages: FC = () => {
     },
     [showMessages, toggleMessages],
   );
-
   // Set up event listeners
   useEffect(() => {
     // Only add listeners when expanded
@@ -67,6 +67,7 @@ export const Messages: FC = () => {
     };
   }, [handleOutsideEvent, showMessages]);
 
+  // Scroll to bottom whenever the modal is opened
   const messageDivRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (messageDivRef.current) {
@@ -77,6 +78,7 @@ export const Messages: FC = () => {
     }
   }, [showMessages, messages]);
 
+  // Handle sending messages on send button click or Enter key press
   const inputMessageRef = useRef<HTMLTextAreaElement | null>(null);
   const onClickSendMessage = () => {
     if (inputMessageRef.current?.value) {
@@ -84,7 +86,17 @@ export const Messages: FC = () => {
       inputMessageRef.current.value = "";
     }
   };
+  const onKeyDownSendMessage = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    // Send message on Enter, but allow newlines with Shift+Enter
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onClickSendMessage();
+    }
+  };
 
+  // Handle saving and clearing the username
   const inputUsernameRef = useRef<HTMLInputElement | null>(null);
   const onClickSaveUsername = () => {
     if (inputUsernameRef.current?.value) {
@@ -166,11 +178,7 @@ export const Messages: FC = () => {
             rows={1}
             className="h-full min-w-10 flex-1 border border-gray-300 p-2"
             placeholder="..."
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                onClickSendMessage();
-              }
-            }}
+            onKeyDown={onKeyDownSendMessage}
           ></textarea>
           <button
             onClick={onClickSendMessage}
@@ -203,20 +211,22 @@ const Message: FC<MessageProps> = ({
     <div
       className={`${
         sentByUser
-          ? "ml-10 self-end rounded-bl-lg rounded-tl-lg rounded-tr-lg border border-[#008B8B]/80 bg-[#008B8B]/70"
-          : "mr-10 rounded-br-lg rounded-tl-lg rounded-tr-lg border border-gray-400 bg-gray-300"
+          ? "ml-10 self-end rounded-lg rounded-br-none border border-[#008B8B]/80 bg-[#008B8B]/70"
+          : "mr-10 rounded-lg rounded-bl-none border border-gray-400 bg-gray-300"
       } ${first && "mt-auto"} w-fit`}
     >
-      <div className="py-1 pl-2 pr-4">
-        {username && <p className="font-semibold leading-none">{username}</p>}
-        <span className="text-balance leading-tight">{content}</span>
+      <div className="px-2 py-1">
+        {username && (
+          <p className="text-sm font-semibold leading-tight">{username}</p>
+        )}
+        <p className="text-md text-balance leading-tight">{content}</p>
+        <p className="text-end text-[10px] leading-tight opacity-50">
+          {new Date(timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </p>
       </div>
-      <p className="mb-1 mr-1 text-end text-[10px] leading-tight opacity-50">
-        {new Date(timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </p>
     </div>
   );
 };

@@ -39,15 +39,15 @@ export const NetworkStatus: FC<NetworkStatusProps> = ({ connectionKey }) => {
         let roundTripTime = 0;
 
         stats.forEach((report) => {
-          // calculate the bandwidth of the video connection
+          // calculate the bandwidth of the video connection while taking into account the time interval
           if (report.type === "inbound-rtp" && report.kind === "video") {
             const bytes = report.bytesReceived;
             const now = report.timestamp;
 
             if (lastStats.current.bytes && lastStats.current.timestamp) {
+              const timeInterval = (now - lastStats.current.timestamp) / 1000; // time in seconds
               const bitrate =
-                ((bytes - lastStats.current.bytes) * 8) /
-                ((now - lastStats.current.timestamp) / 1000); // bits per second
+                ((bytes - lastStats.current.bytes) * 8) / timeInterval; // bits per second
               const bandwidthInMbps = bitrate / 1_000_000; // Convert to Mbps
 
               setBandwidth(`${bandwidthInMbps.toFixed(2)} Mbps`);
@@ -55,6 +55,7 @@ export const NetworkStatus: FC<NetworkStatusProps> = ({ connectionKey }) => {
 
             lastStats.current = { bytes, timestamp: now };
           }
+
           // Analyze inbound-rtp stats for packet loss and jitter
           if (report.type === "inbound-rtp") {
             if (report.packetsReceived > 0) {
@@ -74,9 +75,9 @@ export const NetworkStatus: FC<NetworkStatusProps> = ({ connectionKey }) => {
           packetLossRate > 2 || jitter > 0.03 || roundTripTime > 0.3;
 
         if (isPoorNetwork) {
-          setRemoteNetworkStatus((val) => val - 1);
+          setRemoteNetworkStatus((val) => (val === 0 ? 0 : val - 1));
         } else {
-          setRemoteNetworkStatus((val) => (val >= 3 ? val : val + 1));
+          setRemoteNetworkStatus((val) => (val === 3 ? val : val + 1));
         }
       } catch (error) {
         console.error("Error checking network quality: ", error);
@@ -84,7 +85,7 @@ export const NetworkStatus: FC<NetworkStatusProps> = ({ connectionKey }) => {
       }
     };
 
-    const intervalId = setInterval(checkNetworkQuality, 2500); // Check every 2.5 seconds
+    const intervalId = setInterval(checkNetworkQuality, 1000); // Check every 2.5 seconds
     return () => {
       clearInterval(intervalId);
     };

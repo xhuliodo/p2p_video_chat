@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { useEffect } from "react";
 import { ToastContainer } from "react-toastify";
 import { CallButtons } from "../components/CallButtons";
-import { Messages } from "../components/Messages";
+import { MessagesModal } from "../components/Messages";
 import { DraggableAndResizableUserVideo } from "../components/UserVideo";
 import { RemoteVideos } from "../components/RemoteVideo";
 import { router } from "../routes";
@@ -58,7 +58,7 @@ export const Call = () => {
       <DraggableAndResizableUserVideo />
       <RemoteVideos />
       <CallButtons />
-      <Messages />
+      <MessagesModal />
       <ToastContainer
         position="top-center"
         style={{ width: "80%" }}

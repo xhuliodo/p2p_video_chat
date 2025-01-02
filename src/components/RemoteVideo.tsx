@@ -1,4 +1,4 @@
-import { FC, useEffect, useMemo, useRef } from "react";
+import { FC, useEffect, useMemo, useRef, useState } from "react";
 import { useCallStore } from "../state/call";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { useWindowDimensions } from "../hooks/useWindowDimensions";
@@ -12,9 +12,10 @@ export const RemoteVideos = () => {
       solo: state.solo,
     })),
   );
+  const remoteStreamKeys = Object.keys(remoteStreams);
   const participants = useMemo(
-    () => Object.keys(remoteStreams).length,
-    [remoteStreams],
+    () => remoteStreamKeys.length,
+    [remoteStreamKeys],
   );
   const { windowDimensions } = useWindowDimensions();
   const styles = () => {
@@ -40,19 +41,12 @@ export const RemoteVideos = () => {
           <div
             className={`grid h-full w-full ${participants > 1 && "p-2"} gap-2 ${styles()}`}
           >
-            {Object.entries(remoteStreams).map(([key, stream]) => {
-              return stream && stream.active ? (
-                <div className="relative h-full w-full" key={key}>
-                  <RemoteVideo remoteStream={stream} />
-                  <NetworkStatus connectionKey={key} />
-                </div>
-              ) : (
-                <LoadingSpinner
-                  key={key}
-                  className="h-20 w-20 place-self-center"
-                />
-              );
-            })}
+            {Object.entries(remoteStreams).map(([key, stream]) => (
+              <div className="relative h-full w-full" key={key}>
+                <RemoteVideo remoteStream={stream} />
+                <NetworkStatus connectionKey={key} />
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -65,6 +59,7 @@ interface RemoteVideoProps {
 }
 const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [streaming, setStreaming] = useState(false);
   useEffect(() => {
     const remoteVideo = remoteVideoRef.current;
     if (remoteVideo) {
@@ -74,6 +69,9 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
       const playVideo = () => {
         remoteVideo
           .play()
+          .then(() => {
+            setStreaming(true);
+          })
           .catch((error) =>
             console.error("Failed to play remote video with error:", error),
           );
@@ -86,6 +84,7 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
       return () => {
         if (remoteVideo) {
           remoteVideo.pause();
+          setStreaming(false);
           remoteVideo.removeEventListener("loadedmetadata", playVideo);
           remoteVideo.srcObject = null;
         }
@@ -93,12 +92,18 @@ const RemoteVideo: FC<RemoteVideoProps> = ({ remoteStream }) => {
     }
   }, [remoteStream]);
   return (
-    <div className="h-full w-full overflow-hidden rounded-md border-2">
+    <div className="h-full w-full rounded-md border-2">
+      {!streaming && (
+        <div className="flex h-full w-full items-center justify-center">
+          <LoadingSpinner className="h-20 w-20" />
+        </div>
+      )}
       <video
         ref={remoteVideoRef}
         playsInline
         autoPlay
         className="h-full w-full"
+        hidden={!streaming}
       />
     </div>
   );

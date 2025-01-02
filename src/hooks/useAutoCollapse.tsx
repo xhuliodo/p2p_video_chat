@@ -98,6 +98,5 @@ export const useAutoCollapse = ({
     isCollapsed,
     toggle,
     containerRef,
-    startCollapseTimer,
   } as const;
 };
