@@ -271,7 +271,8 @@ export const DraggableAndResizableUserVideo = () => {
           onResize={onResize}
           onResizeStop={onResizeStop}
           boundsByDirection
-          // you have to specify false for all directions other than the one you want.
+          // You have to specify false for all directions other than the one you want to enable resizing only in the desired direction.
+          // This prevents the Resizable component from allowing resizing in unintended directions.
           enable={{
             bottom: false,
             bottomLeft: false,
