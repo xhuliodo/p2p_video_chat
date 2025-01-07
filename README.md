@@ -1,50 +1,48 @@
-# React + TypeScript + Vite
+# Peer-to-Peer Video Call App
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A real-time, WebRTC-powered video calling application built with React. Features include multi-user support, dynamic layouts, and responsive design.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Multi-user WebRTC support.
+- Camera Switching on mobile.
+- Chat functionality via data channels.
+- Audio and video muting.
+- Low data mode (lower video quality).
+- Responsive UI.
+- Customizable user interface (e.g., draggable, resizable user video component).
 
-## Expanding the ESLint configuration
+## Tech Stack
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+The application is built with **React** and uses the **WebRTC API** for real-time communication. The UI is implemented with components styled with **TailwindCSS**.
+The application state is managed with **Zustand**.
 
-- Configure the top-level `parserOptions` property like this:
+## Folder Structure
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```
+/
+├── public/                 # Static files
+├── src/
+  ├── components/         # React components
+  ├── hooks/              # Custom hooks
+  ├── notifications/      # Notification logic (sound+toasts)
+  ├── pages/              # React pages
+  ├── state/              # Zustand store and a boatload of underlying logic
+  ├── routes.js           # Application routes
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+## Demo
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+Link for the demo: [https://p2p.xhuliodo.xyz/](https://p2p.xhuliodo.xyz/)
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
-```
+## Installation
+
+1. Clone the repository.
+2. Install the dependencies by running `npm install`.
+3. Start the development server by running `npm run dev`.
+
+## Contact
+
+**Maintainer**: Xhulio Doda
+
+**Email**: xhuliodo@gmail.com
