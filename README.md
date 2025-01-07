@@ -4,7 +4,7 @@ A real-time, WebRTC-powered video calling application built with React. Features
 
 ## Features
 
-- Multi-user WebRTC support.
+- Multi-user WebRTC support (**MESH network**).
 - Camera Switching on mobile.
 - Chat functionality via data channels.
 - Audio and video muting.
