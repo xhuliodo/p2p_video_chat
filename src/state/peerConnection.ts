@@ -23,51 +23,27 @@ export const getPeerConnection = async (
     iceCandidatePoolSize: constants.iceCandidatePoolSize,
   });
 
-  if (
-    !import.meta.env.VITE_BACKEND_URL ||
-    !import.meta.env.VITE_STUN_SERVER_URL ||
-    !import.meta.env.VITE_TURN_SERVER_URL ||
-    !import.meta.env.VITE_TURNS_SERVER_URL
-  ) {
+  if (!import.meta.env.VITE_BACKEND_URL) {
     console.error(
       "missing required environment variables for stun/turn servers",
     );
     return defaultPeerConnection;
   }
 
-  let turnCredentials = {
-    username: "user",
-    password: "password",
-    expiresAt: 0,
-  };
+  let iceServers;
   try {
     // Attempt to fetch TURN credentials from primary service
     const res = await fetch(
       `https://${import.meta.env.VITE_BACKEND_URL}/turn/credentials?userId=${userId}`,
     );
     if (res.ok) {
-      turnCredentials = await res.json();
+      iceServers = await res.json();
     }
   } catch (e) {
     console.error("could not get turn credentials with err: ", { e });
     return defaultPeerConnection;
   }
 
-  const iceServers = [
-    // STUN server
-    { urls: import.meta.env.VITE_STUN_SERVER_URL },
-    // TURN server
-    {
-      urls: import.meta.env.VITE_TURN_SERVER_URL,
-      username: turnCredentials.username,
-      credential: turnCredentials.password,
-    },
-    {
-      urls: import.meta.env.VITE_TURNS_SERVER_URL,
-      username: turnCredentials.username,
-      credential: turnCredentials.password,
-    },
-  ];
   return new RTCPeerConnection({
     iceServers,
     iceCandidatePoolSize: constants.iceCandidatePoolSize,
