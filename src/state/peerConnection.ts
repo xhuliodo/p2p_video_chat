@@ -44,10 +44,11 @@ export const getPeerConnection = async (
     return defaultPeerConnection;
   }
 
-  if (!privateServers.iceServers) {
-    console.error("could not get expected credentials, instead got: ", {
+  if (!privateServers.iceServers || privateServers) {
+    console.error("could not get turn credentials with unexpected response", {
       privateServers,
     });
+    return defaultPeerConnection;
   }
 
   return new RTCPeerConnection({
