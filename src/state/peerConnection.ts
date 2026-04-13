@@ -44,7 +44,7 @@ export const getPeerConnection = async (
     return defaultPeerConnection;
   }
 
-  if (!privateServers.iceServers || privateServers) {
+  if (!privateServers.iceServers || !privateServers) {
     console.error("could not get turn credentials with unexpected response", {
       privateServers,
     });
