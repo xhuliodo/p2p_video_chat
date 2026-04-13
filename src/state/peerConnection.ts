@@ -30,22 +30,28 @@ export const getPeerConnection = async (
     return defaultPeerConnection;
   }
 
-  let iceServers;
+  let privateServers;
   try {
     // Attempt to fetch TURN credentials from primary service
     const res = await fetch(
       `https://${import.meta.env.VITE_BACKEND_URL}/turn/credentials?userId=${userId}`,
     );
     if (res.ok) {
-      iceServers = await res.json();
+      privateServers = await res.json();
     }
   } catch (e) {
     console.error("could not get turn credentials with err: ", { e });
     return defaultPeerConnection;
   }
 
+  if (!privateServers.iceServers) {
+    console.error("could not get expected credentials, instead got: ", {
+      privateServers,
+    });
+  }
+
   return new RTCPeerConnection({
-    iceServers,
+    iceServers: privateServers.iceServers,
     iceCandidatePoolSize: constants.iceCandidatePoolSize,
   });
 };
